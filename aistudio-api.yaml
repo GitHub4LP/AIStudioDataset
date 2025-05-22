@@ -1,0 +1,418 @@
+# aistudio-api.yaml
+openapi: 3.0.0
+info:
+  title: 百度AI Studio API
+  version: 1.0.0
+  description: 百度AI Studio服务API定义
+
+servers:
+  - url: https://aistudio.baidu.com
+    description: AI Studio服务
+
+components:
+  schemas:
+    # 通用响应模型
+    AIStudioResponse:
+      type: object
+      properties:
+        result:
+          type: object
+        requestId:
+          type: string
+        debugId:
+          type: string
+
+    # 数据集约束
+    DatasetConstraints:
+      type: object
+      properties:
+        MAX_FILE_NAME_LENGTH:
+          type: integer
+          default: 50
+        MAX_DATASET_NAME_DISPLAY_LENGTH:
+          type: integer
+          default: 40
+        MAX_DATASET_NAME_LENGTH:
+          type: integer
+          default: 100
+        MAX_DATASET_ABS_LENGTH:
+          type: integer
+          default: 200
+        MAX_TAG_LENGTH_ALL:
+          type: integer
+          default: 127
+        MAX_TAGS_COUNT:
+          type: integer
+          default: 5
+        MAX_FILE_ABS_LENGTH:
+          type: integer
+          default: 499
+        MAX_FILES_PER_DATASET:
+          type: integer
+          default: 10
+        MAX_DATASET_SIZE_GB:
+          type: integer
+          default: 50
+
+    # 数据集参数
+    DatasetParams:
+      type: object
+      properties:
+        datasetName:
+          type: string
+        datasetAbs:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        fileIds:
+          type: array
+          items:
+            type: string
+
+paths:
+  # 获取Token
+  /studio/token:
+    get:
+      operationId: getToken
+      summary: 获取Token
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  result:
+                    type: object
+                    properties:
+                      bdToken:
+                        type: string
+
+  # 获取私有数据集列表
+  /studio/dataset/userlist:
+    post:
+      operationId: getPrivateList
+      summary: 获取私有数据集列表
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                kw:
+                  type: string
+                selfOrder:
+                  type: integer
+                  default: 0
+                orderType:
+                  type: integer
+                  default: 0
+                personalDatasetRange:
+                  type: integer
+                  default: 0
+                p:
+                  type: integer
+                pageSize:
+                  type: integer
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AIStudioResponse'
+
+  # 获取公开数据集列表
+  /studio/dataset/public:
+    post:
+      operationId: getPublicList
+      summary: 获取公开数据集列表
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                p:
+                  type: integer
+                pageSize:
+                  type: integer
+                kw:
+                  type: string
+                orderType:
+                  type: integer
+                  default: 0
+                topic:
+                  type: integer
+                  default: 0
+                tags:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AIStudioResponse'
+
+  # 获取收藏数据集列表
+  /studio/dataset/collectlist:
+    post:
+      operationId: getCollectList
+      summary: 获取收藏数据集列表
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                kw:
+                  type: string
+                ts:
+                  type: integer
+                  default: 0
+                p:
+                  type: integer
+                pageSize:
+                  type: integer
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AIStudioResponse'
+
+  # 下载数据集文件
+  /studio/dataset/file/download:
+    post:
+      operationId: datasetFileDownload
+      summary: 下载数据集文件(旧版本)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                datasetId:
+                  type: string
+                fileId:
+                  type: string
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+
+  # 新版本文件下载
+  /llm/files/datasets/{datasetId}/file/{fileId}/download:
+    get:
+      operationId: datasetFileDownloadNew
+      summary: 下载数据集文件(新版本)
+      parameters:
+        - name: datasetId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: fileId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+
+  # 检查数据集使用情况
+  /studio/dataset/check/used:
+    get:
+      operationId: getDatasetUsed
+      summary: 检查数据集使用情况
+      parameters:
+        - name: datasetId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AIStudioResponse'
+
+  # 获取ACL
+  /llm/files/acl:
+    get:
+      operationId: getAcl
+      summary: 获取ACL(新版本)
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AIStudioResponse'
+
+  # 获取BOS ACL
+  /studio/dataset/bosacl:
+    post:
+      operationId: getBosAcl
+      summary: 获取BOS ACL(旧版本)
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AIStudioResponse'
+
+  # 添加文件
+  /llm/files/addfile:
+    post:
+      operationId: addFile
+      summary: 添加文件(新版本)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                fileOriginName:
+                  type: string
+                fileKey:
+                  type: string
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AIStudioResponse'
+
+  # 删除数据集
+  /studio/dataset/delete:
+    post:
+      operationId: deleteDataset
+      summary: 删除数据集
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                datasetId:
+                  type: string
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AIStudioResponse'
+
+  # 获取数据集详情
+  /studio/dataset/detail:
+    post:
+      operationId: fetchDetail
+      summary: 获取数据集详情
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                datasetId:
+                  type: string
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AIStudioResponse'
+
+  # 创建数据集
+  /llm/files/datasets:
+    post:
+      operationId: createDataset
+      summary: 创建数据集
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DatasetParams'
+              properties:
+                datasetContent:
+                  type: string
+                authorName:
+                  type: string
+                datasetType:
+                  type: string
+                protocolId:
+                  type: string
+                fileAbsList:
+                  type: array
+                  items:
+                    type: string
+                public:
+                  type: boolean
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AIStudioResponse'
+
+  # 保存编辑
+  /studio/dataset/add:
+    post:
+      operationId: saveEdit
+      summary: 保存编辑
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/DatasetParams'
+                - type: object
+                  properties:
+                    datasetId:
+                      type: string
+                    datasetContent:
+                      type: string
+                    authorName:
+                      type: string
+                    datasetType:
+                      type: string
+                    protocolId:
+                      type: string
+                    fileAbsList:
+                      type: array
+                      items:
+                        type: string
+                    public:
+                      type: boolean
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AIStudioResponse'
