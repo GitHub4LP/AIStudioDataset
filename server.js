@@ -180,6 +180,96 @@ async function createServer() {
     }
   })
 
+  // 处理更新数据集
+  app.put('/api/datasets/:datasetId', async (req, res) => {
+    try {
+      if (!aiStudio) {
+        await initAIStudio()
+      }
+
+      const { datasetId } = req.params
+      const {
+        datasetName,
+        datasetAbs,
+        tags,
+        fileIds,
+        fileAbsList,
+        ispublic
+      } = req.body
+
+      // Validate datasetId
+      if (!datasetId) {
+        return res.status(400).json({
+          success: false,
+          error: 'Dataset ID is required'
+        })
+      }
+
+      // Validate other parameters
+      try {
+        // Note: validateDatasetParams doesn't directly support ispublic,
+        // but it validates the core parameters.
+        // We'll handle ispublic separately or assume a default.
+        validateDatasetParams({ datasetName, datasetAbs, tags, fileIds })
+      } catch (error) {
+        return res.status(400).json({
+          success: false,
+          error: error.message
+        })
+      }
+
+      const datasetContent = datasetAbs || '' // Use datasetAbs for datasetContent
+      const finalIspublic = typeof ispublic === 'number' ? ispublic : 0 // Default to 0 (private)
+
+      // Call AI Studio saveEdit
+      const editResp = await aiStudio.saveEdit(
+        datasetId,
+        datasetName,
+        datasetAbs,
+        datasetContent,
+        tags || [],
+        fileIds,
+        fileAbsList || [],
+        finalIspublic
+      )
+
+      if (!editResp || !editResp.body) {
+        throw new Error('更新数据集失败: 服务器响应为空')
+      }
+
+      if (editResp.body.error_code) {
+        // Log the detailed error from AI Studio
+        console.error('AI Studio Error:', JSON.stringify(editResp.body, null, 2));
+        throw new Error(`更新数据集失败: ${editResp.body.error_msg || '未知AI Studio错误'}`)
+      }
+      
+      // Assuming a successful response structure, similar to create.
+      // Adjust if AI Studio's saveEdit response is different.
+      // For example, it might return the updated dataset details or just a success status.
+      if (editResp.body.result) { // Or any other success indicator from AI Studio
+        res.json({
+          success: true,
+          message: '数据集更新成功',
+          result: editResp.body.result // Send back AI Studio's result
+        })
+      } else {
+         // If no specific result but also no error_code, assume success but log for review
+        console.warn('更新数据集响应未包含明确的result, 但无错误码:', JSON.stringify(editResp.body, null, 2));
+        res.json({
+          success: true,
+          message: '数据集更新操作已提交' 
+        });
+      }
+
+    } catch (error) {
+      logError('更新数据集失败', error)
+      res.status(500).json({
+        success: false,
+        error: error.message || '更新数据集失败'
+      })
+    }
+  })
+
   // 处理服务器文件上传到数据集
   app.post('/api/upload-to-dataset', async (req, res) => {
     try {
@@ -660,10 +750,12 @@ async function createServer() {
       }
       const { datasetId, fileId } = req.params;
       const url_resp = await aiStudio.datasetFileDownload(datasetId, parseInt(fileId));
-      res.json(url_resp.body);
+      // 只返回 bosUrl 字符串，失败时返回空字符串
+      const bosUrl = url_resp.body?.result?.bosUrl || '';
+      res.send(bosUrl);
     } catch (error) {
       logError('获取文件URL失败', error)
-      res.status(500).json({ error: '获取文件URL失败' });
+      res.send('');
     }
   });
 
