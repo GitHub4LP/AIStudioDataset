@@ -137,7 +137,7 @@
                 <div class="el-upload__text">拖拽文件到此处或 <em>点击上传</em></div>
                  <template #tip>
                     <div class="el-upload__tip">
-                        文件处理后将自动添加至下方“已选文件”列表。
+                        文件处理后将自动添加至下方"已选文件"列表。
                     </div>
                 </template>
               </el-upload>
@@ -279,12 +279,52 @@ const urlFetchForm = ref({ url: '', fileName: '', referer: '', userAgent: '' });
 const builtDatasetTreeData = computed(() => Object.values(datasetStore.detailedDatasets).map(ds => ({
     id: ds.id, label: ds.label, type: 'dataset', isDataset: true, 
     description: ds.description, tags: ds.tags,
-    children: ds.children ? ds.children.map(file => transformFileNode(file, ds.id)) : [],
+    children: Array.isArray(ds.children)
+      ? ds.children.map(file => transformFileNode(file, ds.id)).filter(Boolean)
+      : [],
     fileIds: ds.fileIds, fileAbsList: ds.fileAbsList, ispublic: ds.ispublic,
 })));
-function transformFileNode(file, datasetId) { /* ... */ } // Full implementation needed
+
+function transformFileNode(file, datasetId) {
+  if (!file) return null;
+  return {
+    id: file.fileId || file.id, // 确保有唯一id
+    label: file.fileName || file.label,
+    type: file.type || 'file',
+    isFileNode: true,
+    datasetId,
+    children: Array.isArray(file.children)
+      ? file.children.map(child => transformFileNode(child, datasetId)).filter(Boolean)
+      : [],
+    ...file
+  };
+}
+
 const handleDatasetTreeNodeClick = async (data) => uiStore.selectExplorerItem(data);
-const confirmDeleteDataset = async (datasetNodeData) => { /* ... */ }; // Full implementation needed
+const confirmDeleteDataset = async (datasetNodeData) => {
+  if (!datasetNodeData || !datasetNodeData.id) {
+    ElMessage.error("无法确定要删除的数据集。");
+    return;
+  }
+  try {
+    await ElMessageBox.confirm(
+      `确定要删除数据集 "${datasetNodeData.label}" 吗？此操作不可恢复！`,
+      '删除数据集确认',
+      { confirmButtonText: '确定删除', cancelButtonText: '取消', type: 'warning', customClass: 'dark-message-box' }
+    );
+    await datasetStore.deleteDataset(datasetNodeData.id);
+    ElMessage.success(`数据集 "${datasetNodeData.label}" 已删除。`);
+    // 如果当前选中项就是被删除的，清空右侧详情
+    if (uiStore.selectedExplorerItem?.id === datasetNodeData.id) {
+      uiStore.clearSelectedExplorerItem();
+    }
+  } catch (error) {
+    if (error !== 'cancel' && error.message !== 'cancel' && error.name !== 'cancel') {
+      console.error('删除数据集失败:', error);
+      ElMessage.error(`删除失败: ${error.message}`);
+    }
+  }
+};
 const getNodeTitle = (data) => { /* ... */ }; // Full implementation needed
 
 

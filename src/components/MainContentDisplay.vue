@@ -84,7 +84,7 @@
           <el-descriptions-item label="类型">{{ selectedItem.file?.fileContentType || '未知' }}</el-descriptions-item>
           <el-descriptions-item label="大小">{{ formatFileSize(selectedItem.file?.fileSize) }}</el-descriptions-item>
         </el-descriptions>
-        <el-button type="primary" size="small" style="margin-top: 15px;" disabled>下载 (功能待实现)</el-button>
+        <el-button type="primary" size="small" style="margin-top: 15px;" @click="handleDownloadFile">下载</el-button>
       </div>
 
       <!-- Folder Details (from dataset) -->
@@ -145,6 +145,7 @@ import EditDatasetDialog from './EditDatasetDialog.vue';
 import AddFilesDialog from './AddFilesDialog.vue';
 import { useUIStore } from '@/stores/uiStore';
 import { useDatasetStore } from '@/stores/datasetStore';
+import * as apiService from '@/services/apiService';
 
 const uiStore = useUIStore();
 const datasetStore = useDatasetStore();
@@ -273,6 +274,40 @@ const confirmRemoveFileFromDataset = async (fileToRemove) => {
       ElMessage.error(`移除文件失败: ${error.message}`);
     }
   }
+};
+
+// 下载链接缓存
+const downloadUrlCache = ref({});
+
+const handleDownloadFile = async () => {
+  if (!selectedItem.value || !selectedItem.value.datasetId || !selectedItem.value.id) {
+    ElMessage.error('无法获取文件信息');
+    return;
+  }
+  const cacheKey = `${selectedItem.value.datasetId}_${selectedItem.value.id}`;
+  let url = downloadUrlCache.value[cacheKey];
+  if (!url) {
+    try {
+      const res = await apiService.getFileDownloadUrl({
+        datasetId: selectedItem.value.datasetId,
+        fileId: selectedItem.value.id
+      });
+      url = res.url || res.downloadUrl || res;
+      if (!url) throw new Error('未获取到下载链接');
+      downloadUrlCache.value[cacheKey] = url;
+    } catch (e) {
+      ElMessage.error('获取下载链接失败: ' + (e.message || e));
+      return;
+    }
+  }
+  // 创建a标签下载，noreferrer
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = selectedItem.value.label || '';
+  a.rel = 'noreferrer';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
 };
 
 </script>

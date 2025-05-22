@@ -175,3 +175,16 @@ export async function fetchUrlToDataset(fetchData) {
     });
     return handleResponse(response);
 }
+
+/**
+ * 获取文件下载链接（修正版，调用后端实际接口）
+ * @param {object} params - { datasetId, fileId }
+ * @returns {Promise<string>} - 下载链接
+ */
+export async function getFileDownloadUrl({ datasetId, fileId }) {
+  if (!datasetId || !fileId) throw new Error('缺少datasetId或fileId');
+  const response = await fetch(`${API_BASE_URL}/datasets/${datasetId}/files/${fileId}/url`);
+  const url = await response.text();
+  if (!url) throw new Error('未获取到下载链接');
+  return url;
+}

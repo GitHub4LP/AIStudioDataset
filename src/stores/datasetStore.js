@@ -5,7 +5,8 @@ import {
     updateDataset as apiUpdateDataset, 
     deleteDataset as apiDeleteDataset,
     getDatasetConstraints as apiGetDatasetConstraints,
-    registerServerFile as apiRegisterServerFile // For adding files
+    registerServerFile as apiRegisterServerFile, // For adding files
+    createDataset // <-- 确保导入
 } from '@/services/apiService'; // Assuming @ is configured for src
 
 const PAGE_SIZE = 20; // As used in ExplorerPanel
@@ -288,7 +289,7 @@ export const useDatasetStore = defineStore('dataset', {
         };
         
         // console.log("Creating new dataset with payload:", payload);
-        const newDatasetResponse = await apiCreateDataset(payload); // apiService.createDataset
+        const newDatasetResponse = await createDataset(payload); // apiService.createDataset
 
         if (!newDatasetResponse || !newDatasetResponse.success || !newDatasetResponse.datasetId) {
           throw new Error(newDatasetResponse.error || '创建数据集未能返回有效的ID。');

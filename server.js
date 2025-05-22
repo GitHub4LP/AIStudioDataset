@@ -750,10 +750,12 @@ async function createServer() {
       }
       const { datasetId, fileId } = req.params;
       const url_resp = await aiStudio.datasetFileDownload(datasetId, parseInt(fileId));
-      res.json(url_resp.body);
+      // 只返回 bosUrl 字符串，失败时返回空字符串
+      const bosUrl = url_resp.body?.result?.bosUrl || '';
+      res.send(bosUrl);
     } catch (error) {
       logError('获取文件URL失败', error)
-      res.status(500).json({ error: '获取文件URL失败' });
+      res.send('');
     }
   });
 

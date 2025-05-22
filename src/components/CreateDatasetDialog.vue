@@ -103,7 +103,7 @@
 </template>
 
 <script setup>
-import { ref, watch, nextTick, defineProps, defineEmits, computed } from 'vue';
+import { ref, watch, nextTick, computed } from 'vue';
 import { ElDialog, ElForm, ElFormItem, ElInput, ElTag, ElButton, ElMessage, ElSkeleton } from 'element-plus';
 import { useDatasetStore } from '@/stores/datasetStore';
 
