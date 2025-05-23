@@ -1,0 +1,357 @@
+<template>
+  <el-dialog
+    :model-value="visible"
+    :title="`上传到数据集: ${datasetName}`"
+    width="600px"
+    @update:model-value="$emit('update:visible', $event)"
+    @closed="resetDialog"
+    :close-on-click-modal="!isLoading" 
+    :close-on-press-escape="!isLoading"
+    class="upload-local-files-dialog"
+  >
+    <div v-if="isLoading && totalFilesToUploadCount > 0" class="loading-indicator">
+      <el-progress
+        :text-inside="true"
+        :stroke-width="20"
+        :percentage="uploadProgress"
+        status="success" 
+      />
+      <p v-if="currentUploadingFile">正在上传: {{ currentUploadingFile }} ({{ filesProcessedCount }}/{{ totalFilesToUploadCount }})</p>
+      <p v-else>准备上传 {{ totalFilesToUploadCount }} 个文件...</p>
+    </div>
+
+    <el-form label-position="top" :disabled="isLoading">
+      <el-form-item v-if="basePathInDataset" label="目标路径 (数据集内)">
+        <el-input :value="basePathInDataset" disabled />
+      </el-form-item>
+
+      <el-form-item label="选择文件或文件夹">
+        <el-upload
+          ref="uploaderRef"
+          action="#"
+          drag
+          multiple
+          :http-request="handleHttpRequest"
+          :on-change="handleFileSelectionChange"
+          :on-remove="handleFileRemoveFromDisplayList"
+          :file-list="displayFileList"
+          :auto-upload="false" 
+          class="local-file-uploader"
+        >
+          <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
+          <div class="el-upload__text">拖拽文件到此处或 <em>点击选择文件</em></div>
+        </el-upload>
+        <el-button @click="triggerFolderInput" style="margin-top: 10px;" :disabled="isLoading">
+          <el-icon style="margin-right: 5px;"><FolderAdd /></el-icon> 选择文件夹
+        </el-button>
+        <input 
+          type="file" 
+          webkitdirectory 
+          multiple 
+          style="display: none" 
+          ref="folderInputRef" 
+          @change="handleFolderInputChange"
+          :disabled="isLoading"
+        />
+      </el-form-item>
+
+      <div v-if="selectedFiles.length > 0" class="selected-files-preview">
+        <h4>待上传文件 ({{ selectedFiles.length }}):</h4>
+        <el-table :data="selectedFiles" size="small" height="150px" stripe border>
+          <el-table-column prop="name" label="文件名" />
+          <el-table-column prop="size" label="大小" width="100">
+            <template #default="{ row }">{{ formatFileSize(row.size) }}</template>
+          </el-table-column>
+          <el-table-column prop="relativePath" label="相对路径 (文件夹内)" />
+        </el-table>
+      </div>
+    </el-form>
+
+    <template #footer>
+      <span class="dialog-footer">
+        <el-button @click="$emit('update:visible', false)" :disabled="isLoading">取消</el-button>
+        <el-button 
+          type="primary" 
+          @click="startUploadProcess" 
+          :loading="isLoading"
+          :disabled="selectedFiles.length === 0"
+        >
+          {{ isLoading ? `上传中... (${filesProcessedCount}/${totalFilesToUploadCount})` : '开始上传' }}
+        </el-button>
+      </span>
+    </template>
+  </el-dialog>
+</template>
+
+<script setup>
+import { ref, defineProps, defineEmits, watch } from 'vue';
+import { 
+  ElDialog, ElForm, ElFormItem, ElInput, ElUpload, ElButton, ElIcon, 
+  ElMessage, ElProgress, ElTable, ElTableColumn
+} from 'element-plus';
+import { UploadFilled, FolderAdd } from '@element-plus/icons-vue';
+import { useDatasetStore } from '@/stores/datasetStore';
+import { useUploadStore } from '@/stores/uploadStore'; // Import upload store
+import { v4 as uuidv4 } from 'uuid'; // Import uuid
+import * as apiService from '@/services/apiService';
+import { formatFileSize as utilFormatFileSize } from '@/utils/fileDisplayUtils';
+
+const props = defineProps({
+  visible: Boolean,
+  datasetId: { type: String, required: true },
+  datasetName: { type: String, default: '' },
+  basePathInDataset: { type: String, default: '' },
+});
+const emit = defineEmits(['update:visible', 'files-added']);
+
+const datasetStore = useDatasetStore();
+const uploadStore = useUploadStore(); // Initialize upload store
+const uploaderRef = ref(null);
+const folderInputRef = ref(null);
+
+const isLoading = ref(false);
+const displayFileList = ref([]); 
+const selectedFiles = ref([]); 
+
+const uploadProgress = ref(0);
+const filesProcessedCount = ref(0);
+const totalFilesToUploadCount = ref(0);
+const currentUploadingFile = ref('');
+
+watch(() => props.visible, (newVal) => {
+  if (newVal) {
+    resetDialog();
+  }
+});
+
+const formatFileSize = (size) => {
+  return utilFormatFileSize(size) || 'N/A';
+};
+
+const resetDialog = () => {
+  isLoading.value = false;
+  displayFileList.value = [];
+  selectedFiles.value = [];
+  uploadProgress.value = 0;
+  filesProcessedCount.value = 0;
+  totalFilesToUploadCount.value = 0;
+  currentUploadingFile.value = '';
+  if (uploaderRef.value) {
+    uploaderRef.value.clearFiles();
+  }
+   if (folderInputRef.value) {
+    folderInputRef.value.value = '';
+  }
+};
+
+const handleHttpRequest = () => { /* Dummy */ };
+
+const addFileToList = (file, relativePath = '') => {
+  const existingFileIndex = selectedFiles.value.findIndex(
+    f => f.name === file.name && (f.relativePath || '') === relativePath
+  );
+  if (existingFileIndex === -1) {
+    selectedFiles.value.push({
+      raw: file, 
+      name: file.name,
+      size: file.size,
+      type: file.type,
+      uid: file.uid || `${Date.now()}_${Math.random()}`,
+      relativePath: relativePath, 
+    });
+  }
+};
+
+const handleFileSelectionChange = (file, currentDisplayFileList) => {
+  displayFileList.value = [...currentDisplayFileList]; 
+  if (file.raw) { 
+      addFileToList(file.raw, '');
+  }
+};
+
+const handleFileRemoveFromDisplayList = (file) => {
+  selectedFiles.value = selectedFiles.value.filter(f => f.uid !== file.uid);
+  displayFileList.value = displayFileList.value.filter(f => f.uid !== file.uid);
+};
+
+const triggerFolderInput = () => {
+  folderInputRef.value?.click();
+};
+
+const handleFolderInputChange = (event) => {
+  const files = event.target.files;
+  if (files) {
+    for (const file of files) {
+      const relativePath = file.webkitRelativePath || '';
+      addFileToList(file, relativePath);
+      displayFileList.value.push({ 
+        name: file.name, 
+        size: file.size, 
+        uid: file.uid || `${Date.now()}_${Math.random()}_folderfile`,
+        status: 'ready' 
+      });
+    }
+  }
+   if (folderInputRef.value) folderInputRef.value.value = ''; 
+};
+
+const startUploadProcess = async () => {
+  if (selectedFiles.value.length === 0) {
+    ElMessage.warning('请选择要上传的文件。');
+    return;
+  }
+
+  isLoading.value = true;
+  filesProcessedCount.value = 0;
+  totalFilesToUploadCount.value = selectedFiles.value.length;
+  uploadProgress.value = 0;
+  
+  const uploadedFileResults = [];
+  let overallSuccess = true;
+  let anyFileProcessed = false;
+
+  // Add a main task for this batch
+  const batchTaskId = uuidv4();
+  const isFolderUpload = selectedFiles.value.some(f => f.relativePath) || selectedFiles.value.length > 1;
+  const batchTaskName = isFolderUpload ? 
+    (selectedFiles.value[0]?.relativePath.split('/')[0] || `多文件上传到 ${props.datasetName}`) : 
+    (selectedFiles.value[0]?.name || `文件上传到 ${props.datasetName}`);
+
+  uploadStore.addTask({
+    id: batchTaskId,
+    name: batchTaskName,
+    type: isFolderUpload ? 'folder' : 'file',
+    status: 'uploading',
+    progress: 0,
+    totalSize: selectedFiles.value.reduce((acc, f) => acc + (f.size || 0), 0), // Approximate total size
+    itemCount: totalFilesToUploadCount.value,
+  });
+
+  for (const fileObj of selectedFiles.value) {
+    currentUploadingFile.value = fileObj.name;
+    // For phase 1, we don't add sub-tasks to the store, but update the main task.
+    // The local UI still shows per-file progress.
+    uploadStore.updateTaskStatus(batchTaskId, 'uploading', uploadProgress.value);
+
+    try {
+      const formData = new FormData();
+      formData.append('file', fileObj.raw);
+      
+      const response = await apiService.uploadLocalFile(formData); 
+      if (response.success && response.fileId) {
+        let finalFileAbs = response.fileAbs; 
+        if (props.basePathInDataset) {
+          finalFileAbs = `${props.basePathInDataset.replace(/^\/+|\/+$/g, '')}/${finalFileAbs}`;
+        }
+        if (fileObj.relativePath) {
+            const dirPath = fileObj.relativePath.substring(0, fileObj.relativePath.lastIndexOf('/'));
+            if(dirPath) {
+                 finalFileAbs = props.basePathInDataset 
+                                ? `${props.basePathInDataset.replace(/^\/+|\/+$/g, '')}/${dirPath}/${fileObj.name}`
+                                : `${dirPath}/${fileObj.name}`;
+            } else { 
+                 finalFileAbs = props.basePathInDataset
+                                ? `${props.basePathInDataset.replace(/^\/+|\/+$/g, '')}/${fileObj.name}`
+                                : fileObj.name;
+            }
+        }
+        finalFileAbs = finalFileAbs.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+        uploadedFileResults.push({ fileId: response.fileId, fileAbs: finalFileAbs });
+        anyFileProcessed = true;
+      } else {
+        ElMessage.error(`文件 ${fileObj.name} 上传失败: ${response.error || '未知错误'}`);
+        overallSuccess = false;
+      }
+    } catch (error) {
+      ElMessage.error(`文件 ${fileObj.name} 上传出错: ${error.message || '网络错误'}`);
+      overallSuccess = false;
+    }
+    filesProcessedCount.value++;
+    uploadProgress.value = Math.round((filesProcessedCount.value / totalFilesToUploadCount.value) * 100);
+    // Update main task progress after each file
+    uploadStore.updateTaskStatus(batchTaskId, 'uploading', uploadProgress.value);
+  }
+  currentUploadingFile.value = '';
+
+  if (uploadedFileResults.length > 0) {
+    try {
+      const dataset = datasetStore.getDatasetById(props.datasetId);
+      if (!dataset) {
+        throw new Error('目标数据集信息未找到。');
+      }
+      const existingDatasetData = {
+        datasetName: dataset.label || dataset.name,
+        datasetAbs: dataset.description || dataset.abs,
+        tags: dataset.tags || [],
+        ispublic: dataset.ispublic !== undefined ? dataset.ispublic : 0,
+        fileIds: dataset.fileIds || [],
+        fileAbsList: dataset.fileAbsList || [],
+      };
+
+      await datasetStore.addFilesToDataset({
+        datasetId: props.datasetId,
+        newFilesData: uploadedFileResults,
+        existingDatasetData: existingDatasetData,
+      });
+      // ElMessage.success(`${uploadedFileResults.length} 个文件已成功添加到数据集 ${props.datasetName}。`); // Message can be part of store notification
+      emit('files-added');
+      // emit('update:visible', false); // Keep dialog open until user closes or all tasks complete from overlay
+    } catch (error) {
+      console.error('添加到数据集失败:', error);
+      ElMessage.error(`添加到数据集失败: ${error.message || '未知错误'}`);
+      overallSuccess = false;
+    }
+  }
+  
+  if (!anyFileProcessed && selectedFiles.value.length > 0) { // No files were even attempted (e.g. error before loop)
+      overallSuccess = false;
+  }
+
+  // Final update to the main task status
+  if (overallSuccess) {
+    uploadStore.updateTaskStatus(batchTaskId, 'completed', 100);
+    ElMessage.success(`批处理任务完成: ${uploadedFileResults.length} 个文件成功添加到 ${props.datasetName}。`);
+  } else {
+    const errorMsg = `批处理任务部分或完全失败。成功: ${uploadedFileResults.length}/${totalFilesToUploadCount.value}`;
+    uploadStore.updateTaskStatus(batchTaskId, 'failed', uploadProgress.value, errorMsg);
+    ElMessage.warning(errorMsg);
+  }
+  
+  // Close dialog only if no files were selected or an initial error occurred.
+  // Otherwise, let user see status in overlay and close manually.
+  if (selectedFiles.value.length === 0 || (!anyFileProcessed && !overallSuccess)) {
+      emit('update:visible', false);
+  }
+  isLoading.value = false;
+};
+
+</script>
+
+<style scoped>
+.upload-local-files-dialog .local-file-uploader {
+  width: 100%;
+}
+.upload-local-files-dialog :deep(.el-upload-dragger) {
+  padding: 20px 10px;
+}
+.selected-files-preview {
+  margin-top: 15px;
+}
+.selected-files-preview h4 {
+  margin-bottom: 5px;
+  font-size: 1em;
+}
+.loading-indicator {
+  text-align: center;
+  margin-bottom: 20px;
+}
+.loading-indicator p {
+  margin-top: 10px;
+  font-size: 0.9em;
+  color: #888;
+}
+.dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+}
+</style>

@@ -8,6 +8,7 @@ import {
     registerServerFile as apiRegisterServerFile, // For adding files
     createDataset // <-- 确保导入
 } from '@/services/apiService'; // Assuming @ is configured for src
+import { buildFileTree } from '../utils/fileTreeHelper';
 
 const PAGE_SIZE = 20; // As used in ExplorerPanel
 const MAX_CONCURRENT_REQUESTS = 3; // As used in ExplorerPanel
@@ -95,7 +96,8 @@ export const useDatasetStore = defineStore('dataset', {
                             tags: detailData.result.tags || ds.tags || [],
                             fileIds: detailData.result.fileList?.map(f => f.fileId) || [],
                             fileAbsList: detailData.result.fileList?.map(f => f.fileAbs) || [],
-                            children: detailData.result.fileList, // Keep original fileList as children for tree
+                            flatFileList: detailData.result.fileList || [],
+                            children: buildFileTree(detailData.result.fileList || [], ds.datasetId),
                             ispublic: detailData.result.public !== undefined ? detailData.result.public : (ds.public !== undefined ? ds.public : 0),
 
                         };
@@ -132,7 +134,8 @@ export const useDatasetStore = defineStore('dataset', {
             tags: detailData.result.tags || listVersion.tags || [],
             fileIds: detailData.result.fileList?.map(f => f.fileId) || [],
             fileAbsList: detailData.result.fileList?.map(f => f.fileAbs) || [],
-            children: detailData.result.fileList,
+            flatFileList: detailData.result.fileList || [],
+            children: buildFileTree(detailData.result.fileList || [], datasetId),
             ispublic: detailData.result.public !== undefined ? detailData.result.public : (listVersion.public !== undefined ? listVersion.public : 0),
 
           };

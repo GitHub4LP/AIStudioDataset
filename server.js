@@ -1,6 +1,6 @@
 import express from 'express'
 import { fileURLToPath } from 'url'
-import { dirname, join, normalize } from 'path'
+import { dirname, join, normalize, relative } from 'path'
 import { readdir, stat, readFile } from 'fs/promises'
 import { createServer as createViteServer } from 'vite'
 import { AI_Studio, validateDatasetParams } from './aistudio.js'
@@ -339,58 +339,138 @@ async function createServer() {
         isDirectory: stats.isDirectory()
       })
 
-      // 获取 BOS 客户端
-      const { client, fileKey, bucketName } = await aiStudio.bosClient(false)
-      console.log('BOS客户端信息:', {
-        bucketName,
-        fileKey
-      })
+      if (stats.isDirectory()) {
+        // Helper function to recursively upload files in a directory
+        async function uploadDirectory(currentDir, baseDatasetPath) {
+          const results = []
+          const items = await readdir(currentDir)
 
-      // 上传文件到 BOS
-      const uploadTask = client.putSuperObject({
-        bucketName,
-        objectName: fileKey,
-        data: fullPath,
-        partConcurrency: 2,
-        onProgress: (options) => {
-          const { progress, speed } = options
-          console.log('上传进度:', {
-            progress,
-            speed,
-            fileName
-          })
+          for (const item of items) {
+            const itemPath = join(currentDir, item)
+            const itemStats = await stat(itemPath)
+            const relativePath = relative(fullPath, itemPath) // Path relative to the initial directory
+            const fileAbs = baseDatasetPath ? join(baseDatasetPath, relativePath) : relativePath
+            
+            // Ensure fileAbs uses forward slashes
+            const normalizedFileAbs = fileAbs.split('\\').join('/')
+
+            if (itemStats.isDirectory()) {
+              results.push(...await uploadDirectory(itemPath, baseDatasetPath))
+            } else {
+              console.log(`上传文件: ${itemPath}, datasetPath: ${normalizedFileAbs}`)
+
+              const { client, fileKey, bucketName } = await aiStudio.bosClient(false)
+              const uploadTask = client.putSuperObject({
+                bucketName,
+                objectName: fileKey,
+                data: itemPath,
+                partConcurrency: 2,
+                onProgress: (options) => {
+                  const { progress, speed } = options
+                  console.log('上传进度:', { progress, speed, fileName: item })
+                }
+              })
+              await uploadTask.start()
+              while (!uploadTask.isCompleted()) {
+                await new Promise(resolve => setTimeout(resolve, 100))
+              }
+
+              const addFileResp = await aiStudio.addFile(item, fileKey, false)
+              if (addFileResp && addFileResp.body && addFileResp.body.result && addFileResp.body.result.fileId) {
+                results.push({
+                  success: true,
+                  fileId: addFileResp.body.result.fileId,
+                  fileAbs: normalizedFileAbs,
+                  fileName: item
+                })
+                // Wait a bit after adding file, similar to single file logic
+                await new Promise(resolve => setTimeout(resolve, 500)); 
+              } else {
+                console.error(`添加到数据集失败: ${item}`, addFileResp.body || '无响应体')
+                results.push({
+                  success: false,
+                  fileName: item,
+                  fileAbs: normalizedFileAbs,
+                  error: `添加到数据集失败: ${addFileResp.body?.error_msg || '未知错误'}`
+                })
+              }
+            }
+          }
+          return results
         }
-      })
 
-      // 启动上传
-      const tasks = uploadTask.start()
-      console.log('切分任务:', tasks)
+        // Start directory upload
+        const uploadResults = await uploadDirectory(fullPath, folderPath) // folderPath is the base path in dataset
+        
+        // Filter out any null results from potential directory recursion issues (though current logic should prevent this)
+        const validResults = uploadResults.filter(r => r);
 
-      // 等待上传完成
-      while (!uploadTask.isCompleted()) {
-        await new Promise(resolve => setTimeout(resolve, 100))
+        const allSuccessful = validResults.every(r => r.success);
+        
+        if (validResults.length === 0) {
+          return res.status(404).json({ success: false, error: '目录中没有可上传的文件' });
+        }
+
+        res.json({
+          success: allSuccessful,
+          message: allSuccessful ? '文件夹上传成功' : '文件夹部分上传成功',
+          results: validResults
+        })
+
+      } else { // Single file upload logic (existing behavior)
+        // 获取 BOS 客户端
+        const { client, fileKey, bucketName } = await aiStudio.bosClient(false)
+        console.log('BOS客户端信息:', {
+          bucketName,
+          fileKey
+        })
+
+        // 上传文件到 BOS
+        const uploadTask = client.putSuperObject({
+          bucketName,
+          objectName: fileKey,
+          data: fullPath,
+          partConcurrency: 2,
+          onProgress: (options) => {
+            const { progress, speed } = options
+            console.log('上传进度:', {
+              progress,
+              speed,
+              fileName
+            })
+          }
+        })
+
+        // 启动上传
+        const tasks = uploadTask.start()
+        console.log('切分任务:', tasks)
+
+        // 等待上传完成
+        while (!uploadTask.isCompleted()) {
+          await new Promise(resolve => setTimeout(resolve, 100))
+        }
+
+        // 添加到数据集
+        const addFileResp = await aiStudio.addFile(fileName, fileKey, false)
+        if (!addFileResp || !addFileResp.body || !addFileResp.body.result || !addFileResp.body.result.fileId) {
+          throw new Error('添加到数据集失败: 响应格式错误')
+        }
+        const fileId = addFileResp.body.result.fileId
+
+        // 等待一段时间确保文件处理完成
+        await new Promise(resolve => setTimeout(resolve, 2000))
+
+        res.json({
+          success: true,
+          fileId,
+          fileAbs: folderPath ? `${folderPath}/${fileName}` : fileName
+        })
       }
-
-      // 添加到数据集
-      const addFileResp = await aiStudio.addFile(fileName, fileKey, false)
-      if (!addFileResp || !addFileResp.body || !addFileResp.body.result || !addFileResp.body.result.fileId) {
-        throw new Error('添加到数据集失败: 响应格式错误')
-      }
-      const fileId = addFileResp.body.result.fileId
-
-      // 等待一段时间确保文件处理完成
-      await new Promise(resolve => setTimeout(resolve, 2000))
-
-      res.json({
-        success: true,
-        fileId,
-        fileAbs: folderPath ? `${folderPath}/${fileName}` : fileName
-      })
     } catch (error) {
       logError('上传到数据集失败', error)
       res.status(500).json({ 
         success: false, 
-        error: error.message || '上传到数据集失败' 
+        error: error.message || '上传到数据集失败'
       })
     }
   })
@@ -419,23 +499,26 @@ async function createServer() {
       }
 
       // 验证参数
-      const validationErrors = validateDatasetParams({
-        fileName: originalname,
-        datasetName,
-        datasetAbs,
-        tags,
-        fileIds: [1], // 假设只有一个文件
-        fileSize
-      })
-
-      if (validationErrors.length > 0) {
-        // 清理临时文件
+      // Note: validateDatasetParams might need adjustment if it's too strict for local uploads
+      // where fileId might not be immediately known or relevant before actual upload.
+      // For now, assuming it's adaptable or focusing on the server-side upload logic.
+      try {
+        validateDatasetParams({
+          fileName: decodedFileName, // Use decoded name for validation
+          datasetName,
+          datasetAbs,
+          tags,
+          fileIds: [1], // Placeholder, as file isn't in AI Studio yet
+          fileSize
+        })
+      } catch (error) {
         fs.unlinkSync(tempPath)
         return res.status(400).json({
           success: false,
-          error: validationErrors.join('; ')
+          error: error.message
         })
       }
+
 
       // 获取 BOS 客户端
       const { client, fileKey, bucketName } = await aiStudio.bosClient(false)
@@ -465,12 +548,18 @@ async function createServer() {
       fs.unlinkSync(tempPath)
 
       // 添加到数据集
-      const addFileResp = await aiStudio.addFile(originalname, fileKey, false)
+      const addFileResp = await aiStudio.addFile(decodedFileName, fileKey, false) // Use decoded name
+      if (!addFileResp || !addFileResp.body || !addFileResp.body.result || !addFileResp.body.result.fileId) {
+        throw new Error(`添加到数据集失败: ${addFileResp.body?.error_msg || '响应格式错误'}`)
+      }
       const fileId = addFileResp.body.result.fileId
 
       res.json({
         success: true,
-        fileId
+        fileId,
+        // For local uploads, fileAbs is typically just the filename unless other context is provided.
+        // This matches the existing behavior implicitly.
+        fileAbs: decodedFileName 
       })
     } catch (error) {
       logError('上传到数据集失败', error)
@@ -519,13 +608,19 @@ async function createServer() {
 
       // 验证参数
       try {
-        validateDatasetParams({ datasetName, datasetAbs, tags, fileIds })
+        // Ensure fileAbsList elements also meet constraints if they are new files.
+        // This part might need more robust validation depending on how fileAbsList is used.
+        validateDatasetParams({ datasetName, datasetAbs, tags, fileIds, fileAbsList: fileAbsList || [] })
       } catch (error) {
         return res.status(400).json({
           success: false,
           error: error.message
         })
       }
+      
+      // Ensure fileAbsList has forward slashes, as this is often a point of error if not standardized
+      const normalizedFileAbsList = (fileAbsList || []).map(fab => fab.split('\\').join('/'));
+
 
       // 创建数据集
       const createResp = await aiStudio.create(
@@ -534,7 +629,7 @@ async function createServer() {
         datasetAbs || '',  // 数据集内容
         tags || [],  // 标签
         fileIds,  // 文件ID列表
-        fileAbsList || [],  // 文件描述列表，包含文件的完整相对路径
+        normalizedFileAbsList,  // 文件描述列表，包含文件的完整相对路径
         0  // 是否公开
       )
 
