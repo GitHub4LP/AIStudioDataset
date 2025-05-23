@@ -1,9 +1,8 @@
 <template>
-  <div class="explorer-panel" @click="closeContextMenu">
-    <el-collapse v-model="activeCollapseNames">
-      <el-collapse-item name="datasets">
-        <template #title>
-          <span class="collapse-title-text">数据集</span>
+  <div class="explorer-panel-container">
+    <div class="explorer-panel" @click="closeContextMenu">
+      <el-collapse v-model="activeCollapseNames">
+        <el-collapse-item name="datasets" title="数据集">
           <el-button
             type="primary"
             link
@@ -14,276 +13,275 @@
           >
             <el-icon><Plus /></el-icon> 新建空数据集
           </el-button>
-        </template>
-        <div v-if="datasetStore.isLoadingDatasets && Object.keys(datasetStore.detailedDatasets).length === 0" class="dataset-loading-indicator">
-          <el-skeleton :rows="3" animated />
-          <div class="progress-text">加载中... {{ datasetStore.loadedPages }}/{{ datasetStore.totalPages }} 页</div>
-        </div>
-        <div v-else-if="datasetStore.datasetError" class="dataset-error-message">
-          加载数据集出错: {{ datasetStore.datasetError }}
-        </div>
-        <el-tree
-          v-else
-          :data="builtDatasetTreeData"
-          :props="datasetTreeProps"
-          node-key="id"
-          highlight-current
-          class="dataset-tree"
-          empty-text="暂无数据集"
-          @node-click="handleDatasetTreeNodeClick"
-          @node-contextmenu="handleNodeContextMenu"
-        >
-          <template #default="{ node, data }">
-            <span class="tree-node-custom">
-              <span class="node-label" :title="getNodeTitle(data)">
-                <span v-if="data.type === 'dataset'" class="dataset-icon-wrapper">
-                  <el-icon><Coin /></el-icon>
+          <div v-if="datasetStore.isLoadingDatasets && Object.keys(datasetStore.detailedDatasets).length === 0" class="dataset-loading-indicator">
+            <el-skeleton :rows="3" animated />
+            <div class="progress-text">加载中... {{ datasetStore.loadedPages }}/{{ datasetStore.totalPages }} 页</div>
+          </div>
+          <div v-else-if="datasetStore.datasetError" class="dataset-error-message">
+            加载数据集出错: {{ datasetStore.datasetError }}
+          </div>
+          <el-tree
+            v-else
+            :data="builtDatasetTreeData"
+            :props="datasetTreeProps"
+            node-key="id"
+            highlight-current
+            class="dataset-tree"
+            empty-text="暂无数据集"
+            @node-click="handleDatasetTreeNodeClick"
+            @node-contextmenu="handleNodeContextMenu"
+          >
+            <template #default="{ node, data }">
+              <span class="tree-node-custom">
+                <span class="node-label" :title="getNodeTitle(data)">
+                  <span v-if="data.type === 'dataset'" class="dataset-icon-wrapper">
+                    <el-icon><Coin /></el-icon>
+                  </span>
+                  <span v-else-if="data.type === 'folder'" class="folder-icon-wrapper">
+                    <el-icon><FolderOpened v-if="node.expanded" /><Folder v-else /></el-icon>
+                  </span>
+                  <span v-else-if="data.type === 'file'" class="file-icon-wrapper" :style="{ color: getFileIconColor(data.label, data.fileContentType) }">
+                    <svg viewBox="0 0 24 24" width="1em" height="1em" style="vertical-align: middle;">
+                      <path fill="currentColor" :d="getFileIconPath(data.label, data.fileContentType)"/>
+                    </svg>
+                  </span>
+                  <span class="node-text">{{ node.label }}</span>
                 </span>
-                <span v-else-if="data.type === 'folder'" class="folder-icon-wrapper">
-                  <el-icon><FolderOpened v-if="node.expanded" /><Folder v-else /></el-icon>
-                </span>
-                <span v-else-if="data.type === 'file'" class="file-icon-wrapper" :style="{ color: getFileIconColor(data.label, data.fileContentType) }">
-                  <svg viewBox="0 0 24 24" width="1em" height="1em" style="vertical-align: middle;">
-                    <path fill="currentColor" :d="getFileIconPath(data.label, data.fileContentType)"/>
-                  </svg>
-                </span>
-                <span class="node-text">{{ node.label }}</span>
-              </span>
-              <span v-if="data.type === 'dataset'" class="node-actions">
-                <el-button
-                  link
-                  type="danger"
-                  size="small"
-                  @click.stop="confirmDeleteDataset(data)"
-                  title="删除数据集"
-                  class="delete-dataset-btn"
-                >
-                  <el-icon><Delete /></el-icon>
-                </el-button>
-              </span>
-              <span v-else-if="data.type === 'file'" class="file-meta-info">
-                 {{ formatFileSize(data.fileSize) }}
-              </span>
-            </span>
-          </template>
-        </el-tree>
-      </el-collapse-item>
-      <el-collapse-item title="文件源 (通过文件创建新数据集)" name="fileSources">
-        <el-tabs v-model="activeFileSourceTab" @tab-change="handleFileSourceTabChange">
-          <el-tab-pane label="服务器文件" name="server">
-            <div class="server-file-browser">
-              <div class="path-selector">
-                <el-select 
-                    v-model="fileBrowserStore.selectedBasePath" 
-                    placeholder="选择基础路径" 
-                    @change="fileBrowserStore.changeBasePath" 
+                <span v-if="data.type === 'dataset'" class="node-actions">
+                  <el-button
+                    link
+                    type="danger"
                     size="small"
-                >
-                  <el-option
-                    v-for="pathItem in fileBrowserStore.basePaths"
-                    :key="pathItem.value"
-                    :label="pathItem.label"
-                    :value="pathItem.value"
-                  />
-                </el-select>
-              </div>
-              <div class="path-navigation">
-                <el-breadcrumb separator="/">
-                  <el-breadcrumb-item
-                    v-for="(item, index) in fileBrowserStore.pathSegments"
-                    :key="index"
-                    @click="handleServerPathSegmentClick(index)"
+                    @click="confirmDeleteDataset(data)"
+                    title="删除数据集"
+                    class="delete-dataset-btn"
                   >
-                    {{ item }}
-                  </el-breadcrumb-item>
-                </el-breadcrumb>
-              </div>
+                    <el-icon><Delete /></el-icon>
+                  </el-button>
+                </span>
+                <span v-else-if="data.type === 'file'" class="file-meta-info">
+                   {{ formatFileSize(data.fileSize) }}
+                </span>
+              </span>
+            </template>
+          </el-tree>
+        </el-collapse-item>
+        <el-collapse-item title="文件源 (通过文件创建新数据集)" name="fileSources">
+          <el-tabs v-model="activeFileSourceTab" @tab-change="handleFileSourceTabChange">
+            <el-tab-pane label="服务器文件" name="server">
+              <div class="server-file-browser">
+                <div class="path-selector">
+                  <el-select 
+                      v-model="fileBrowserStore.selectedBasePath" 
+                      placeholder="选择基础路径" 
+                      @change="fileBrowserStore.changeBasePath" 
+                      size="small"
+                  >
+                    <el-option
+                      v-for="pathItem in fileBrowserStore.basePaths"
+                      :key="pathItem.value"
+                      :label="pathItem.label"
+                      :value="pathItem.value"
+                    />
+                  </el-select>
+                </div>
+                <div class="path-navigation">
+                  <el-breadcrumb separator="/">
+                    <el-breadcrumb-item
+                      v-for="(item, index) in fileBrowserStore.pathSegments"
+                      :key="index"
+                      @click="handleServerPathSegmentClick(index)"
+                    >
+                      {{ item }}
+                    </el-breadcrumb-item>
+                  </el-breadcrumb>
+                </div>
 
-              <div v-if="fileBrowserStore.isLoading" class="loading-state">
-                <el-skeleton :rows="3" animated />
+                <div v-if="fileBrowserStore.isLoading" class="loading-state">
+                  <el-skeleton :rows="3" animated />
+                </div>
+                 <div v-else-if="fileBrowserStore.error" class="dataset-error-message">
+                   获取文件列表失败: {{ fileBrowserStore.error }}
+                 </div>
+                <el-table
+                  v-else-if="fileBrowserStore.serverFiles.length > 0"
+                  :data="fileBrowserStore.serverFiles"
+                  style="width: 100%"
+                  height="200px" 
+                  size="small"
+                  :show-header="false"
+                  row-class-name="file-table-row"
+                  empty-text="当前目录为空"
+                  @selection-change="handleNewDatasetServerFileSelectionChange"
+                  ref="serverFileSelectionTableRef"
+                >
+                  <el-table-column type="selection" width="45" :selectable="isServerFileSelectableForNewDataset" />
+                  <el-table-column prop="name" label="文件名">
+                    <template #default="{ row }">
+                      <div class="file-name" @click="handleServerFileOrFolderClick(row)">
+                        <el-icon v-if="row.type === '文件夹'"><Folder /></el-icon>
+                        <el-icon v-else><Document /></el-icon>
+                        <span>{{ row.name }}</span>
+                      </div>
+                    </template>
+                  </el-table-column>
+                </el-table>
+                <div v-else class="empty-state">
+                  <el-empty description="当前目录为空" :image-size="50" />
+                </div>
               </div>
-               <div v-else-if="fileBrowserStore.error" class="dataset-error-message">
-                 获取文件列表失败: {{ fileBrowserStore.error }}
-               </div>
-              <el-table
-                v-else-if="fileBrowserStore.serverFiles.length > 0"
-                :data="fileBrowserStore.serverFiles"
-                style="width: 100%"
-                height="200px" 
-                size="small"
-                :show-header="false"
-                row-class-name="file-table-row"
-                empty-text="当前目录为空"
-                @selection-change="handleNewDatasetServerFileSelectionChange"
-                ref="serverFileSelectionTableRef"
-              >
-                <el-table-column type="selection" width="45" :selectable="isServerFileSelectableForNewDataset" />
-                <el-table-column prop="name" label="文件名">
-                  <template #default="{ row }">
-                    <div class="file-name" @click="handleServerFileOrFolderClick(row)">
-                      <el-icon v-if="row.type === '文件夹'"><Folder /></el-icon>
-                      <el-icon v-else><Document /></el-icon>
-                      <span>{{ row.name }}</span>
+            </el-tab-pane>
+            <el-tab-pane label="本地文件" name="local">
+              <div class="local-file-source-tab">
+                <el-upload
+                  ref="localFileUploaderRef"
+                  action="#" 
+                  :http-request="customLocalUploadRequest"
+                  :on-change="handleLocalFileSelectionChange"
+                  :on-remove="handleLocalFileRemoveFromDisplay"
+                  :file-list="localFileDisplayList"
+                  :multiple="true"
+                  :auto-upload="true" 
+                  drag
+                  class="local-file-uploader"
+                >
+                  <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
+                  <div class="el-upload__text">拖拽文件到此处或 <em>点击上传</em></div>
+                  <template #tip>
+                    <div class="el-upload__tip">
+                      文件处理后将自动添加至下方"已选文件"列表。
                     </div>
                   </template>
-                </el-table-column>
-              </el-table>
-              <div v-else class="empty-state">
-                <el-empty description="当前目录为空" :image-size="50" />
+                </el-upload>
+                 <el-button @click="triggerLocalFolderInput" size="small" style="margin-top: 10px;">选择文件夹</el-button>
+                 <input 
+                  type="file" 
+                  webkitdirectory 
+                  multiple 
+                  style="display: none" 
+                  ref="localFolderInputRef" 
+                  @change="handleLocalFolderInputChange" 
+                 />
               </div>
-            </div>
-          </el-tab-pane>
-          <el-tab-pane label="本地文件" name="local">
-            <div class="local-file-source-tab">
-              <el-upload
-                ref="localFileUploaderRef"
-                action="#" 
-                :http-request="customLocalUploadRequest"
-                :on-change="handleLocalFileSelectionChange"
-                :on-remove="handleLocalFileRemoveFromDisplay"
-                :file-list="localFileDisplayList"
-                :multiple="true"
-                :auto-upload="true" 
-                drag
-                class="local-file-uploader"
-              >
-                <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
-                <div class="el-upload__text">拖拽文件到此处或 <em>点击上传</em></div>
-                 <template #tip>
-                    <div class="el-upload__tip">
-                        文件处理后将自动添加至下方"已选文件"列表。
-                    </div>
+            </el-tab-pane>
+            <el-tab-pane label="URL抓取" name="url">
+               <div class="url-fetch-source-tab">
+                  <el-form :model="urlFetchForm" ref="urlFetchFormRef" label-width="80px" size="small">
+                      <el-form-item label="文件URL" prop="url" :rules="[{ required: true, message: '请输入URL', trigger: 'blur' }, { type: 'url', message: '请输入有效的URL', trigger: ['blur', 'change'] }]">
+                          <el-input v-model="urlFetchForm.url" placeholder="http(s)://..."></el-input>
+                      </el-form-item>
+                      <el-form-item label="文件名" prop="fileName" :rules="[{ required: true, message: '请输入文件名', trigger: 'blur' }]">
+                          <el-input v-model="urlFetchForm.fileName" placeholder="例如: data.zip"></el-input>
+                      </el-form-item>
+                      <el-form-item label="Referer" prop="referer">
+                          <el-input v-model="urlFetchForm.referer" placeholder="可选"></el-input>
+                      </el-form-item>
+                      <el-form-item label="User-Agent" prop="userAgent">
+                          <el-input v-model="urlFetchForm.userAgent" placeholder="可选"></el-input>
+                      </el-form-item>
+                      <el-form-item>
+                          <el-button 
+                              type="primary" 
+                              @click="handleUrlFetchAndAddToList" 
+                              :loading="isProcessingUrlFile"
+                              style="width: 100%;"
+                          >
+                            {{ isProcessingUrlFile ? '抓取中...' : '抓取并添加文件' }}
+                          </el-button>
+                      </el-form-item>
+                  </el-form>
+               </div>
+            </el-tab-pane>
+          </el-tabs>
+
+          <div v-if="allSelectedFilesForNewDataset.length > 0" class="selected-files-panel-for-new-dataset">
+            <h4>已选文件 (准备创建新数据集):</h4>
+            <el-table :data="allSelectedFilesForNewDataset" size="small" height="120px" :key="allSelectedFilesForNewDataset.length">
+              <el-table-column prop="name" label="文件名" />
+              <el-table-column prop="source" label="来源" width="100" />
+              <el-table-column label="操作" width="60">
+                <template #default="{ row }">
+                  <el-button link type="danger" size="small" @click="removeFileFromNewDatasetSelection(row)">
+                    <el-icon><Delete /></el-icon>
+                  </el-button>
                 </template>
-              </el-upload>
-               <el-button @click="triggerLocalFolderInput" size="small" style="margin-top: 10px;">选择文件夹</el-button>
-               <input 
-                type="file" 
-                webkitdirectory 
-                multiple 
-                style="display: none" 
-                ref="localFolderInputRef" 
-                @change="handleLocalFolderInputChange" 
-               />
-            </div>
-          </el-tab-pane>
-          <el-tab-pane label="URL抓取" name="url">
-             <div class="url-fetch-source-tab">
-                <el-form :model="urlFetchForm" ref="urlFetchFormRef" label-width="80px" size="small">
-                    <el-form-item label="文件URL" prop="url" :rules="[{ required: true, message: '请输入URL', trigger: 'blur' }, { type: 'url', message: '请输入有效的URL', trigger: ['blur', 'change'] }]">
-                        <el-input v-model="urlFetchForm.url" placeholder="http(s)://..."></el-input>
-                    </el-form-item>
-                    <el-form-item label="文件名" prop="fileName" :rules="[{ required: true, message: '请输入文件名', trigger: 'blur' }]">
-                        <el-input v-model="urlFetchForm.fileName" placeholder="例如: data.zip"></el-input>
-                    </el-form-item>
-                    <el-form-item label="Referer" prop="referer">
-                        <el-input v-model="urlFetchForm.referer" placeholder="可选"></el-input>
-                    </el-form-item>
-                    <el-form-item label="User-Agent" prop="userAgent">
-                        <el-input v-model="urlFetchForm.userAgent" placeholder="可选"></el-input>
-                    </el-form-item>
-                    <el-form-item>
-                        <el-button 
-                            type="primary" 
-                            @click="handleUrlFetchAndAddToList" 
-                            :loading="isProcessingUrlFile"
-                            style="width: 100%;"
-                        >
-                          {{ isProcessingUrlFile ? '抓取中...' : '抓取并添加文件' }}
-                        </el-button>
-                    </el-form-item>
-                </el-form>
-             </div>
-          </el-tab-pane>
-        </el-tabs>
+              </el-table-column>
+            </el-table>
+          </div>
 
-        <div v-if="allSelectedFilesForNewDataset.length > 0" class="selected-files-panel-for-new-dataset">
-          <h4>已选文件 (准备创建新数据集):</h4>
-          <el-table :data="allSelectedFilesForNewDataset" size="small" height="120px" :key="allSelectedFilesForNewDataset.length">
-            <el-table-column prop="name" label="文件名" />
-            <el-table-column prop="source" label="来源" width="100" />
-            <el-table-column label="操作" width="60">
-              <template #default="{ row }">
-                <el-button link type="danger" size="small" @click="removeFileFromNewDatasetSelection(row)">
-                  <el-icon><Delete /></el-icon>
-                </el-button>
-              </template>
-            </el-table-column>
-          </el-table>
-        </div>
+          <div class="create-dataset-action-panel">
+            <el-button 
+              type="primary" 
+              @click="handleOpenCreateDatasetDialog" 
+              :disabled="isProcessingNewDatasetFiles || isProcessingLocalFiles || isProcessingUrlFile"
+              :loading="isProcessingNewDatasetFiles || isProcessingLocalFiles || isProcessingUrlFile"
+              style="width: 100%; margin-top: 10px;"
+            >
+              {{ overallProcessingButtonText }}
+            </el-button>
+          </div>
 
-        <div class="create-dataset-action-panel">
-          <el-button 
-            type="primary" 
-            @click="handleOpenCreateDatasetDialog" 
-            :disabled="allSelectedFilesForNewDataset.length === 0 || isProcessingNewDatasetFiles || isProcessingLocalFiles || isProcessingUrlFile"
-            :loading="isProcessingNewDatasetFiles || isProcessingLocalFiles || isProcessingUrlFile"
-            style="width: 100%; margin-top: 10px;"
-          >
-            {{ overallProcessingButtonText }}
-          </el-button>
-        </div>
+        </el-collapse-item>
+      </el-collapse>
 
-      </el-collapse-item>
-    </el-collapse>
-
-    <!-- Custom Context Menu -->
-    <div
-      v-if="contextMenuVisible"
-      class="custom-context-menu"
-      :style="{ top: contextMenuPosition.top, left: contextMenuPosition.left }"
-    >
-      <ul>
-        <li v-if="contextMenuTargetNode && (contextMenuTargetNode.type === 'dataset' || contextMenuTargetNode.type === 'folder')" 
-            @click="triggerUploadLocalToNode">
-          <el-icon><Upload /></el-icon> 上传本地文件/文件夹到此...
-        </li>
-         <li v-if="contextMenuTargetNode && (contextMenuTargetNode.type === 'dataset' || contextMenuTargetNode.type === 'folder')" 
-            @click="triggerAddServerItemsToNode">
-          <el-icon><FolderAdd /></el-icon> 从服务器添加文件/文件夹到此...
-        </li>
-        <li v-if="contextMenuTargetNode && (contextMenuTargetNode.type === 'dataset' || contextMenuTargetNode.type === 'folder')" 
-            @click="triggerAddUrlToNode">
-          <el-icon><LinkIcon /></el-icon> 通过URL添加文件到此...
-        </li>
-      </ul>
+      <!-- Custom Context Menu -->
+      <div
+        v-if="contextMenuVisible"
+        class="custom-context-menu"
+        :style="{ top: contextMenuPosition.top, left: contextMenuPosition.left }"
+      >
+        <ul>
+          <li v-if="contextMenuTargetNode && (contextMenuTargetNode.type === 'dataset' || contextMenuTargetNode.type === 'folder')" 
+              @click="triggerUploadLocalToNode">
+            <el-icon><Upload /></el-icon> 上传本地文件/文件夹到此...
+          </li>
+          <li v-if="contextMenuTargetNode && (contextMenuTargetNode.type === 'dataset' || contextMenuTargetNode.type === 'folder')" 
+              @click="triggerAddServerItemsToNode">
+            <el-icon><FolderAdd /></el-icon> 从服务器添加文件/文件夹到此...
+          </li>
+          <li v-if="contextMenuTargetNode && (contextMenuTargetNode.type === 'dataset' || contextMenuTargetNode.type === 'folder')" 
+              @click="triggerAddUrlToNode">
+            <el-icon><LinkIcon /></el-icon> 通过URL添加文件到此...
+          </li>
+        </ul>
+      </div>
     </div>
-
+    <CreateDatasetDialog
+      :visible="createDatasetDialogVisible"
+      :files-for-dataset="processedFilesForDialog"
+      @update:visible="createDatasetDialogVisible = $event"
+      @dataset-created="handleDatasetCreatedWithFiles"
+    />
+    <CreateEmptyDatasetDialog
+      :visible="createEmptyDatasetDialogVisible"
+      @update:visible="createEmptyDatasetDialogVisible = $event"
+      @dataset-created="handleEmptyDatasetCreated"
+    />
+    <UploadLocalFilesDialog
+      :visible="uploadLocalFilesDialogVisible"
+      :dataset-id="targetDatasetIdForUpload"
+      :dataset-name="targetDatasetNameForUpload"
+      :base-path-in-dataset="targetBasePathInDataset"
+      @update:visible="uploadLocalFilesDialogVisible = $event"
+      @files-added="handleLocalFilesUploaded"
+    />
+    <AddFilesDialog
+      :visible="addServerItemsDialogVisible"
+      :dataset-id="targetDatasetIdForUpload"
+      :dataset-name="targetDatasetNameForUpload"
+      :base-path-in-dataset="targetBasePathInDataset"
+      @update:visible="addServerItemsDialogVisible = $event"
+      @items-added="handleServerItemsAdded"
+    />
+    <AddUrlDialog
+      :visible="addUrlDialogVisible"
+      :dataset-id="targetDatasetIdForUpload"
+      :dataset-name="targetDatasetNameForUpload"
+      :base-path-in-dataset="targetBasePathInDataset"
+      @update:visible="addUrlDialogVisible = $event"
+      @file-added="handleAddUrlFileAdded"
+    />
   </div>
-  <CreateDatasetDialog
-    :visible="createDatasetDialogVisible"
-    :files-for-dataset="processedFilesForDialog"
-    @update:visible="createDatasetDialogVisible = $event"
-    @dataset-created="handleDatasetCreatedWithFiles"
-  />
-  <CreateEmptyDatasetDialog
-    :visible="createEmptyDatasetDialogVisible"
-    @update:visible="createEmptyDatasetDialogVisible = $event"
-    @dataset-created="handleEmptyDatasetCreated"
-  />
-  <UploadLocalFilesDialog
-    :visible="uploadLocalFilesDialogVisible"
-    :dataset-id="targetDatasetIdForUpload"
-    :dataset-name="targetDatasetNameForUpload"
-    :base-path-in-dataset="targetBasePathInDataset"
-    @update:visible="uploadLocalFilesDialogVisible = $event"
-    @files-added="handleLocalFilesUploaded"
-  />
-  <AddFilesDialog
-    :visible="addServerItemsDialogVisible"
-    :dataset-id="targetDatasetIdForUpload"
-    :dataset-name="targetDatasetNameForUpload"
-    :base-path-in-dataset="targetBasePathInDataset"
-    @update:visible="addServerItemsDialogVisible = $event"
-    @items-added="handleServerItemsAdded"
-  />
-  <AddUrlDialog
-    :visible="addUrlDialogVisible"
-    :dataset-id="targetDatasetIdForUpload"
-    :dataset-name="targetDatasetNameForUpload"
-    :base-path-in-dataset="targetBasePathInDataset"
-    @update:visible="addUrlDialogVisible = $event"
-    @file-added="handleAddUrlFileAdded"
-  />
 </template>
 
 <script setup>
@@ -301,9 +299,7 @@ import UploadLocalFilesDialog from './UploadLocalFilesDialog.vue';
 import AddFilesDialog from './AddFilesDialog.vue'; 
 import AddUrlDialog from './AddUrlDialog.vue';
 import * as apiService from '@/services/apiService'; 
-// Import the utility functions
 import { getFileIconPath, getFileIconColor, formatFileSize } from '@/utils/fileDisplayUtils'; 
-
 import { useDatasetStore } from '@/stores/datasetStore';
 import { useUIStore } from '@/stores/uiStore';
 import { useFileBrowserStore } from '@/stores/fileBrowserStore';
@@ -351,8 +347,8 @@ const urlFetchForm = ref({ url: '', fileName: '', referer: '', userAgent: '' });
 const createEmptyDatasetDialogVisible = ref(false);
 
 // --- State for Target Operations (Context Menu Triggered) ---
-const targetDatasetIdForUpload = ref(null); 
-const targetDatasetNameForUpload = ref(null); 
+const targetDatasetIdForUpload = ref('');
+const targetDatasetNameForUpload = ref('');
 const targetBasePathInDataset = ref('');    
 
 // --- State for Uploading Local Files Dialog ---
@@ -472,18 +468,23 @@ const closeContextMenu = () => {
   contextMenuTargetNode.value = null;
 };
 
+const normalizePath = (path) => {
+  if (!path) return '';
+  return path.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+};
+
 const triggerUploadLocalToNode = () => {
   if (!contextMenuTargetNode.value) return;
   const node = contextMenuTargetNode.value;
   if (node.type === 'dataset') {
-    targetDatasetIdForUpload.value = node.id;
-    targetDatasetNameForUpload.value = node.label;
+    targetDatasetIdForUpload.value = String(node.id);
+    targetDatasetNameForUpload.value = node.label || '';
     targetBasePathInDataset.value = ''; 
   } else if (node.type === 'folder') {
-    targetDatasetIdForUpload.value = node.datasetId;
+    targetDatasetIdForUpload.value = String(node.datasetId);
     const parentDataset = datasetStore.getDatasetById(node.datasetId);
-    targetDatasetNameForUpload.value = parentDataset ? parentDataset.label : node.datasetId;
-    targetBasePathInDataset.value = node.path; 
+    targetDatasetNameForUpload.value = parentDataset ? parentDataset.label : String(node.datasetId);
+    targetBasePathInDataset.value = normalizePath(node.path); 
   } else {
     closeContextMenu();
     return;
@@ -496,14 +497,14 @@ const triggerAddServerItemsToNode = () => {
   if (!contextMenuTargetNode.value) return;
   const node = contextMenuTargetNode.value;
   if (node.type === 'dataset') {
-    targetDatasetIdForUpload.value = node.id;
-    targetDatasetNameForUpload.value = node.label;
+    targetDatasetIdForUpload.value = String(node.id);
+    targetDatasetNameForUpload.value = node.label || '';
     targetBasePathInDataset.value = '';
   } else if (node.type === 'folder') {
-    targetDatasetIdForUpload.value = node.datasetId;
+    targetDatasetIdForUpload.value = String(node.datasetId);
     const parentDataset = datasetStore.getDatasetById(node.datasetId);
-    targetDatasetNameForUpload.value = parentDataset ? parentDataset.label : node.datasetId;
-    targetBasePathInDataset.value = node.path;
+    targetDatasetNameForUpload.value = parentDataset ? parentDataset.label : String(node.datasetId);
+    targetBasePathInDataset.value = normalizePath(node.path);
   } else {
     closeContextMenu();
     return;
@@ -516,14 +517,14 @@ const triggerAddUrlToNode = () => {
   if (!contextMenuTargetNode.value) return;
   const node = contextMenuTargetNode.value;
   if (node.type === 'dataset') {
-    targetDatasetIdForUpload.value = node.id;
-    targetDatasetNameForUpload.value = node.label;
+    targetDatasetIdForUpload.value = String(node.id);
+    targetDatasetNameForUpload.value = node.label || '';
     targetBasePathInDataset.value = '';
   } else if (node.type === 'folder') {
-    targetDatasetIdForUpload.value = node.datasetId;
+    targetDatasetIdForUpload.value = String(node.datasetId);
     const parentDataset = datasetStore.getDatasetById(node.datasetId);
-    targetDatasetNameForUpload.value = parentDataset ? parentDataset.label : node.datasetId;
-    targetBasePathInDataset.value = node.path;
+    targetDatasetNameForUpload.value = parentDataset ? parentDataset.label : String(node.datasetId);
+    targetBasePathInDataset.value = normalizePath(node.path);
   } else {
     closeContextMenu();
     return;
@@ -532,39 +533,78 @@ const triggerAddUrlToNode = () => {
   closeContextMenu();
 };
 
-const handleLocalFilesUploaded = () => {
+const handleLocalFilesUploaded = async () => {
   uploadLocalFilesDialogVisible.value = false;
   if (targetDatasetIdForUpload.value) {
+    try {
+      await datasetStore.fetchDatasetDetails(targetDatasetIdForUpload.value, true);
       const currentSelection = uiStore.selectedExplorerItem;
       if (currentSelection && currentSelection.id === targetDatasetIdForUpload.value && currentSelection.type === 'dataset') {
-          uiStore.selectExplorerItem({ ...datasetStore.detailedDatasets[targetDatasetIdForUpload.value] });
+        uiStore.selectExplorerItem({ ...datasetStore.detailedDatasets[targetDatasetIdForUpload.value] });
       } else if (currentSelection && currentSelection.datasetId === targetDatasetIdForUpload.value && currentSelection.type === 'folder' && currentSelection.path === targetBasePathInDataset.value) {
-           uiStore.selectExplorerItem({ ...currentSelection });
+        uiStore.selectExplorerItem({ ...currentSelection });
       }
+    } catch (error) {
+      console.error('刷新数据集详情失败:', error);
+      ElMessage.error(`文件已上传，但刷新数据集详情失败: ${error.message || '未知错误'}`);
+      // 尝试重新加载数据集列表
+      try {
+        await datasetStore.fetchDatasets();
+      } catch (retryError) {
+        console.error('重新加载数据集列表失败:', retryError);
+        ElMessage.error('数据集状态可能不一致，请刷新页面');
+      }
+    }
   }
 };
 
-const handleServerItemsAdded = () => {
+const handleServerItemsAdded = async () => {
   addServerItemsDialogVisible.value = false;
-   if (targetDatasetIdForUpload.value) {
+  if (targetDatasetIdForUpload.value) {
+    try {
+      await datasetStore.fetchDatasetDetails(targetDatasetIdForUpload.value, true);
       const currentSelection = uiStore.selectedExplorerItem;
       if (currentSelection && currentSelection.id === targetDatasetIdForUpload.value && currentSelection.type === 'dataset') {
-          uiStore.selectExplorerItem({ ...datasetStore.detailedDatasets[targetDatasetIdForUpload.value] });
+        uiStore.selectExplorerItem({ ...datasetStore.detailedDatasets[targetDatasetIdForUpload.value] });
       } else if (currentSelection && currentSelection.datasetId === targetDatasetIdForUpload.value && currentSelection.type === 'folder' && currentSelection.path === targetBasePathInDataset.value) {
-           uiStore.selectExplorerItem({ ...currentSelection });
+        uiStore.selectExplorerItem({ ...currentSelection });
       }
+    } catch (error) {
+      console.error('刷新数据集详情失败:', error);
+      ElMessage.error(`文件已添加，但刷新数据集详情失败: ${error.message || '未知错误'}`);
+      // 尝试重新加载数据集列表
+      try {
+        await datasetStore.fetchDatasets();
+      } catch (retryError) {
+        console.error('重新加载数据集列表失败:', retryError);
+        ElMessage.error('数据集状态可能不一致，请刷新页面');
+      }
+    }
   }
 };
 
-const handleAddUrlFileAdded = () => {
+const handleAddUrlFileAdded = async () => {
   addUrlDialogVisible.value = false;
   if (targetDatasetIdForUpload.value) {
+    try {
+      await datasetStore.fetchDatasetDetails(targetDatasetIdForUpload.value, true);
       const currentSelection = uiStore.selectedExplorerItem;
       if (currentSelection && currentSelection.id === targetDatasetIdForUpload.value && currentSelection.type === 'dataset') {
-          uiStore.selectExplorerItem({ ...datasetStore.detailedDatasets[targetDatasetIdForUpload.value] });
+        uiStore.selectExplorerItem({ ...datasetStore.detailedDatasets[targetDatasetIdForUpload.value] });
       } else if (currentSelection && currentSelection.datasetId === targetDatasetIdForUpload.value && currentSelection.type === 'folder' && currentSelection.path === targetBasePathInDataset.value) {
-           uiStore.selectExplorerItem({ ...currentSelection });
+        uiStore.selectExplorerItem({ ...currentSelection });
       }
+    } catch (error) {
+      console.error('刷新数据集详情失败:', error);
+      ElMessage.error(`文件已添加，但刷新数据集详情失败: ${error.message || '未知错误'}`);
+      // 尝试重新加载数据集列表
+      try {
+        await datasetStore.fetchDatasets();
+      } catch (retryError) {
+        console.error('重新加载数据集列表失败:', retryError);
+        ElMessage.error('数据集状态可能不一致，请刷新页面');
+      }
+    }
   }
 };
 
@@ -733,9 +773,6 @@ const removeFileFromNewDatasetSelection = (fileToRemove) => {
 
 const handleOpenCreateDatasetDialog = async () => {
   closeContextMenu();
-  if (allSelectedFilesForNewDataset.value.length === 0) {
-    ElMessage.warning('请至少选择一个文件来创建数据集。'); return;
-  }
   
   let filesForDialog = [];
   filesForDialog.push(...newDatasetSelectedLocalFiles.value.map(f => ({fileId: f.fileId, fileAbs: f.fileAbs, name: f.name})));
@@ -759,10 +796,6 @@ const handleOpenCreateDatasetDialog = async () => {
   }
     
   processedFilesForDialog.value = filesForDialog;
-  if (processedFilesForDialog.value.length === 0) { 
-      ElMessage.error("未能准备任何文件，无法创建数据集。");
-      return;
-  }
   createDatasetDialogVisible.value = true;
 };
 
@@ -793,9 +826,14 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+.explorer-panel-container {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
 .explorer-panel { height: 100%; display: flex; flex-direction: column; background-color: #252526; color: #cccccc;}
 .collapse-title-text { flex-grow: 1; }
-.collapse-header-action-btn { margin-left: auto; padding-right: 10px; }
+.collapse-header-action-btn { margin-right: 10px; padding: 0 5px; }
 .collapse-header-action-btn .el-icon { margin-right: 4px; }
 
 .local-file-source-tab { padding: 10px; }
@@ -818,6 +856,7 @@ onBeforeUnmount(() => {
     font-size: 14px;
     display: flex;
     align-items: center;
+    justify-content: space-between;
 }
 .explorer-panel :deep(.el-collapse-item__wrap) { background-color: #252526; border-bottom: none;}
 .explorer-panel :deep(.el-collapse-item__content) { padding: 0; color: #cccccc;}
@@ -899,159 +938,3 @@ onBeforeUnmount(() => {
   background-color: #383839;
 }
 </style>
-
-[end of src/components/ExplorerPanel.vue]
-
-[start of src/components/DatasetNodeDisplay.vue]
-<template>
-  <div class="dataset-node-display-item" :class="`node-type-${node.type}`">
-    <div class="node-content">
-      <span class="node-label" @click="handleNodeClick" :title="node.path">
-        <el-icon v-if="node.type === 'folder'" class="folder-icon">
-          <FolderOpened v-if="isExpanded" />
-          <Folder v-else />
-        </el-icon>
-        <span v-else-if="node.type === 'file'" class="file-icon-wrapper" :style="{ color: getFileIconColor(node.label, node.fileContentType) }">
-          <svg viewBox="0 0 24 24" width="1em" height="1em" style="vertical-align: middle;">
-            <path fill="currentColor" :d="getFileIconPath(node.label, node.fileContentType)" />
-          </svg>
-        </span>
-        <span class="node-text">{{ node.label }}</span>
-      </span>
-      <span class="node-actions">
-        <el-tooltip v-if="node.type === 'file'" content="从数据集中移除此文件" placement="top">
-          <el-button link type="danger" size="small" @click.stop="confirmRemoveFile" title="移除文件">
-            <el-icon><Delete /></el-icon>
-          </el-button>
-        </el-tooltip>
-        <span v-if="node.type === 'file' && node.fileSize !== undefined" class="file-size-info">
-          {{ formatFileSize(node.fileSize) }}
-        </span>
-      </span>
-    </div>
-    <div v-if="node.type === 'folder' && node.children && node.children.length > 0 && isExpanded" class="node-children">
-      <DatasetNodeDisplay
-        v-for="childNode in node.children"
-        :key="childNode.id"
-        :node="childNode"
-        :dataset-id="datasetId"
-        :current-dataset-details="currentDatasetDetails"
-        @file-click="$emit('file-click', $event)"
-        @folder-click="$emit('folder-click', $event)"
-        @remove-file="$emit('remove-file', $event)"
-      />
-    </div>
-  </div>
-</template>
-
-<script setup>
-import { ref, defineProps, defineEmits } from 'vue';
-import { ElIcon, ElButton, ElTooltip } from 'element-plus';
-import { Folder, FolderOpened, Delete } from '@element-plus/icons-vue';
-import { getFileIconPath, getFileIconColor, formatFileSize } from '@/utils/fileDisplayUtils';
-import { useUIStore } from '@/stores/uiStore';
-
-const props = defineProps({
-  node: {
-    type: Object,
-    required: true,
-  },
-  datasetId: { 
-    type: [String, Number],
-    required: true,
-  },
-  currentDatasetDetails: { 
-    type: Object,
-    required: true,
-  }
-});
-
-const emit = defineEmits(['file-click', 'folder-click', 'remove-file']);
-
-const uiStore = useUIStore();
-const isExpanded = ref(props.node.type === 'folder' ? true : false); 
-
-const handleNodeClick = () => {
-  if (props.node.type === 'file') {
-    emit('file-click', { ...props.node, datasetId: props.datasetId });
-    uiStore.selectExplorerItem({ ...props.node, datasetId: props.datasetId });
-  } else if (props.node.type === 'folder') {
-    isExpanded.value = !isExpanded.value;
-    emit('folder-click', { ...props.node, datasetId: props.datasetId });
-    uiStore.selectExplorerItem({ ...props.node, datasetId: props.datasetId });
-  }
-};
-
-const confirmRemoveFile = () => {
-  if (props.node.type !== 'file') return;
-  // currentDatasetDetails is passed to provide the full dataset context for the removal action
-  emit('remove-file', { fileNode: props.node, dataset: props.currentDatasetDetails });
-};
-
-</script>
-
-<style scoped>
-.dataset-node-display-item {
-  padding: 2px 0px 2px 10px; 
-  font-size: 14px;
-  line-height: 24px;
-}
-
-.node-content {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 4px 8px;
-  border-radius: 4px;
-  cursor: default; 
-}
-.node-content:hover {
-  background-color: #383839; 
-}
-
-.node-label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  cursor: pointer; 
-  flex-grow: 1;
-  overflow: hidden;
-}
-.node-text {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.folder-icon, .file-icon-wrapper {
-  font-size: 16px;
-  color: #85c1e9; 
-}
-.file-icon-wrapper svg {
-  width: 1em;
-  height: 1em;
-  font-size: 16px; 
-}
-.node-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding-left: 10px; 
-}
-.node-actions .el-button--small {
-  padding: 2px 4px;
-}
-.node-actions .el-icon {
-  font-size: 14px;
-}
-.file-size-info {
-  font-size: 0.8em;
-  color: #888888;
-  white-space: nowrap;
-}
-
-.node-children {
-  margin-left: 20px; 
-  border-left: 1px dashed #444; 
-}
-</style>
-[end of src/components/DatasetNodeDisplay.vue]

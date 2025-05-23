@@ -61,14 +61,14 @@
 </template>
 
 <script setup>
-import { ref, reactive, defineProps, defineEmits, watch } from 'vue';
+import { ref, reactive, watch } from 'vue';
 import { 
   ElDialog, ElForm, ElFormItem, ElInput, ElButton, 
   ElMessage, ElProgress 
 } from 'element-plus';
 import { useDatasetStore } from '@/stores/datasetStore';
-import { useUploadStore } from '@/stores/uploadStore'; // Import upload store
-import { v4 as uuidv4 } from 'uuid'; // Import uuid
+import { useUploadStore } from '@/stores/uploadStore';
+import { v4 as uuidv4 } from 'uuid';
 import * as apiService from '@/services/apiService';
 
 const props = defineProps({
@@ -77,15 +77,13 @@ const props = defineProps({
   datasetName: { type: String, default: '' },
   basePathInDataset: { type: String, default: '' },
 });
-const emit = defineEmits(['update:visible', 'file-added']);
 
 const datasetStore = useDatasetStore();
-const uploadStore = useUploadStore(); // Initialize upload store
+const uploadStore = useUploadStore();
 const formRef = ref(null);
 const isLoading = ref(false);
 const loadingMessage = ref('');
-// const fetchProgress = ref(0); // Will be driven by uploadStore now
-const currentTaskId = ref(null); // To keep track of the current task
+const currentTaskId = ref(null);
 
 const form = reactive({
   url: '',
@@ -132,7 +130,6 @@ const resetForm = () => {
   form.userAgent = '';
   isLoading.value = false;
   loadingMessage.value = '';
-  // fetchProgress.value = 0;
   currentTaskId.value = null;
 };
 
@@ -235,7 +232,6 @@ const handleSubmit = async () => {
       } finally {
         isLoading.value = false;
         loadingMessage.value = '';
-        // currentTaskId.value = null; // Keep task id for overlay to show final status
       }
     } else {
       ElMessage.error('请检查表单输入。');

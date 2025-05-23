@@ -54,9 +54,6 @@ export const validateDatasetParams = (params) => {
     if (!Array.isArray(fileIds)) {
         throw new Error('文件ID列表必须是数组格式')
     }
-    if (fileIds.length === 0) {
-        throw new Error('文件ID列表不能为空')
-    }
     if (fileIds.length > DATASET_CONSTRAINTS.MAX_FILES_PER_DATASET) {
         throw new Error(`文件数量不能超过 ${DATASET_CONSTRAINTS.MAX_FILES_PER_DATASET} 个`)
     }

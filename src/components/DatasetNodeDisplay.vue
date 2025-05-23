@@ -40,7 +40,7 @@
 </template>
 
 <script setup>
-import { ref, computed, defineProps, defineEmits } from 'vue';
+import { ref, computed } from 'vue';
 import { ElIcon, ElButton, ElTooltip, ElMessageBox } from 'element-plus';
 import { Folder, FolderOpened, Delete } from '@element-plus/icons-vue';
 import { getFileIconPath, getFileIconColor, formatFileSize } from '@/utils/fileDisplayUtils';

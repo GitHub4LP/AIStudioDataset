@@ -84,15 +84,15 @@
 </template>
 
 <script setup>
-import { ref, defineProps, defineEmits, watch } from 'vue';
+import { ref, watch } from 'vue';
 import { 
   ElDialog, ElForm, ElFormItem, ElInput, ElUpload, ElButton, ElIcon, 
   ElMessage, ElProgress, ElTable, ElTableColumn
 } from 'element-plus';
 import { UploadFilled, FolderAdd } from '@element-plus/icons-vue';
 import { useDatasetStore } from '@/stores/datasetStore';
-import { useUploadStore } from '@/stores/uploadStore'; // Import upload store
-import { v4 as uuidv4 } from 'uuid'; // Import uuid
+import { useUploadStore } from '@/stores/uploadStore';
+import { v4 as uuidv4 } from 'uuid';
 import * as apiService from '@/services/apiService';
 import { formatFileSize as utilFormatFileSize } from '@/utils/fileDisplayUtils';
 
@@ -102,10 +102,11 @@ const props = defineProps({
   datasetName: { type: String, default: '' },
   basePathInDataset: { type: String, default: '' },
 });
+
 const emit = defineEmits(['update:visible', 'files-added']);
 
 const datasetStore = useDatasetStore();
-const uploadStore = useUploadStore(); // Initialize upload store
+const uploadStore = useUploadStore();
 const uploaderRef = ref(null);
 const folderInputRef = ref(null);
 
@@ -223,14 +224,12 @@ const startUploadProcess = async () => {
     type: isFolderUpload ? 'folder' : 'file',
     status: 'uploading',
     progress: 0,
-    totalSize: selectedFiles.value.reduce((acc, f) => acc + (f.size || 0), 0), // Approximate total size
+    totalSize: selectedFiles.value.reduce((acc, f) => acc + (f.size || 0), 0),
     itemCount: totalFilesToUploadCount.value,
   });
 
   for (const fileObj of selectedFiles.value) {
     currentUploadingFile.value = fileObj.name;
-    // For phase 1, we don't add sub-tasks to the store, but update the main task.
-    // The local UI still shows per-file progress.
     uploadStore.updateTaskStatus(batchTaskId, 'uploading', uploadProgress.value);
 
     try {
@@ -268,7 +267,6 @@ const startUploadProcess = async () => {
     }
     filesProcessedCount.value++;
     uploadProgress.value = Math.round((filesProcessedCount.value / totalFilesToUploadCount.value) * 100);
-    // Update main task progress after each file
     uploadStore.updateTaskStatus(batchTaskId, 'uploading', uploadProgress.value);
   }
   currentUploadingFile.value = '';
@@ -279,48 +277,49 @@ const startUploadProcess = async () => {
       if (!dataset) {
         throw new Error('目标数据集信息未找到。');
       }
+
+      // 确保数据集信息完整
       const existingDatasetData = {
-        datasetName: dataset.label || dataset.name,
-        datasetAbs: dataset.description || dataset.abs,
+        datasetName: dataset.label || dataset.name || props.datasetName,
+        datasetAbs: dataset.description || dataset.abs || '数据集描述',
         tags: dataset.tags || [],
         ispublic: dataset.ispublic !== undefined ? dataset.ispublic : 0,
         fileIds: dataset.fileIds || [],
         fileAbsList: dataset.fileAbsList || [],
       };
 
+      // 添加文件到数据集
       await datasetStore.addFilesToDataset({
         datasetId: props.datasetId,
         newFilesData: uploadedFileResults,
         existingDatasetData: existingDatasetData,
       });
-      // ElMessage.success(`${uploadedFileResults.length} 个文件已成功添加到数据集 ${props.datasetName}。`); // Message can be part of store notification
+
+      // 触发文件添加事件
       emit('files-added');
-      // emit('update:visible', false); // Keep dialog open until user closes or all tasks complete from overlay
+      
+      if (overallSuccess) {
+        uploadStore.updateTaskStatus(batchTaskId, 'completed', 100);
+        ElMessage.success(`批处理任务完成: ${uploadedFileResults.length} 个文件成功添加到 ${props.datasetName}。`);
+      } else {
+        const errorMsg = `批处理任务部分或完全失败。成功: ${uploadedFileResults.length}/${totalFilesToUploadCount.value}`;
+        uploadStore.updateTaskStatus(batchTaskId, 'failed', uploadProgress.value, errorMsg);
+        ElMessage.warning(errorMsg);
+      }
     } catch (error) {
       console.error('添加到数据集失败:', error);
       ElMessage.error(`添加到数据集失败: ${error.message || '未知错误'}`);
       overallSuccess = false;
+      uploadStore.updateTaskStatus(batchTaskId, 'failed', uploadProgress.value, error.message);
     }
   }
   
-  if (!anyFileProcessed && selectedFiles.value.length > 0) { // No files were even attempted (e.g. error before loop)
-      overallSuccess = false;
+  if (!anyFileProcessed && selectedFiles.value.length > 0) {
+    overallSuccess = false;
   }
 
-  // Final update to the main task status
-  if (overallSuccess) {
-    uploadStore.updateTaskStatus(batchTaskId, 'completed', 100);
-    ElMessage.success(`批处理任务完成: ${uploadedFileResults.length} 个文件成功添加到 ${props.datasetName}。`);
-  } else {
-    const errorMsg = `批处理任务部分或完全失败。成功: ${uploadedFileResults.length}/${totalFilesToUploadCount.value}`;
-    uploadStore.updateTaskStatus(batchTaskId, 'failed', uploadProgress.value, errorMsg);
-    ElMessage.warning(errorMsg);
-  }
-  
-  // Close dialog only if no files were selected or an initial error occurred.
-  // Otherwise, let user see status in overlay and close manually.
   if (selectedFiles.value.length === 0 || (!anyFileProcessed && !overallSuccess)) {
-      emit('update:visible', false);
+    emit('update:visible', false);
   }
   isLoading.value = false;
 };

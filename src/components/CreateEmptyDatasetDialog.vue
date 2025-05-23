@@ -52,13 +52,14 @@
 </template>
 
 <script setup>
-import { ref, reactive, defineProps, defineEmits, computed } from 'vue';
+import { ref, reactive, computed } from 'vue';
 import { ElDialog, ElForm, ElFormItem, ElInput, ElSelect, ElOption, ElButton, ElMessage } from 'element-plus';
 import { useDatasetStore } from '@/stores/datasetStore';
 
 const props = defineProps({
   visible: Boolean,
 });
+
 const emit = defineEmits(['update:visible', 'dataset-created']);
 
 const datasetStore = useDatasetStore();

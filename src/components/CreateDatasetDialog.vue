@@ -93,7 +93,6 @@
             type="primary" 
             @click="handleCreateDataset" 
             :loading="isCreating || isLoadingConstraints"
-            :disabled="!filesForDataset || filesForDataset.length === 0"
         >
           创建
         </el-button>
@@ -205,10 +204,7 @@ const validateForm = () => {
 };
 
 const handleCreateDataset = async () => {
-  if (!validateForm() || !props.filesForDataset || props.filesForDataset.length === 0) {
-    if (!props.filesForDataset || props.filesForDataset.length === 0) {
-        ElMessage.error('至少需要一个文件来创建数据集。');
-    }
+  if (!validateForm()) {
     return;
   }
 
@@ -220,7 +216,7 @@ const handleCreateDataset = async () => {
       tags: datasetForm.value.tags,
     };
     // filesForDataset prop should already contain { fileId, fileAbs }
-    await datasetStore.createNewDataset(datasetDetails, props.filesForDataset);
+    await datasetStore.createNewDataset(datasetDetails, props.filesForDataset || []);
     
     ElMessage.success('数据集创建成功！');
     emit('dataset-created'); // Inform parent (ExplorerPanel)

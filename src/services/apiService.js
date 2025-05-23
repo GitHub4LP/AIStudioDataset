@@ -188,3 +188,19 @@ export async function getFileDownloadUrl({ datasetId, fileId }) {
   if (!url) throw new Error('未获取到下载链接');
   return url;
 }
+
+/**
+ * Removes a file from a dataset.
+ * Corresponds to DELETE /api/datasets/:datasetId/files/:fileId
+ * @param {string} datasetId - The ID of the dataset
+ * @param {string} fileId - The ID of the file to remove
+ * @returns {Promise<any>}
+ */
+export async function removeFileFromDataset(datasetId, fileId) {
+  if (!datasetId || !fileId) throw new Error("Dataset ID and File ID are required for removing a file.");
+  const response = await fetch(`${API_BASE_URL}/datasets/${datasetId}/files/${fileId}`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' }
+  });
+  return handleResponse(response);
+}

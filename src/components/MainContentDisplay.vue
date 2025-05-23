@@ -230,8 +230,7 @@ const confirmRemoveFileFromDataset = async (eventData) => {
 
   const { fileNode, dataset } = eventData;
   const datasetId = dataset.id;
-  const fileId = fileNode.id; 
-  const fileAbs = fileNode.path; 
+  const fileId = fileNode.id;
 
   if (!fileId) {
     ElMessage.error("文件ID未知，无法移除。");
@@ -252,13 +251,13 @@ const confirmRemoveFileFromDataset = async (eventData) => {
       { confirmButtonText: '确定移除', cancelButtonText: '取消', type: 'warning', customClass: 'dark-message-box' }
     );
     
-    await datasetStore.removeFileFromDataset({ datasetId, fileIdToRemove: fileId, fileAbsToRemove: fileAbs });
+    await datasetStore.removeFileFromDataset({ datasetId, fileIdToRemove: fileId });
     ElMessage.success(`文件 "${fileLabel}" 已成功从数据集中移除。`);
     
     const currentSelectedItem = uiStore.selectedExplorerItem;
     if (currentSelectedItem && currentSelectedItem.id === datasetId && currentSelectedItem.type === 'dataset') {
         uiStore.selectExplorerItem({ ...datasetStore.detailedDatasets[datasetId] });
-    } else if (currentSelectedItem && currentSelectedItem.type === 'folder' && currentSelectedItem.datasetId === datasetId) {
+    
         await datasetStore.fetchDatasetDetails(datasetId, true); 
         const updatedParentDataset = datasetStore.detailedDatasets[datasetId];
         let updatedFolderNode = null;
