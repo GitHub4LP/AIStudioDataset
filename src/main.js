@@ -1,12 +1,12 @@
 import { createApp } from 'vue'
-import { createPinia } from 'pinia' // Import Pinia
+import App from './App.vue'
+import i18n from './i18n'
 import ElementPlus from 'element-plus'
 import 'element-plus/dist/index.css'
-import App from './App.vue'
+import { createPinia } from 'pinia'
 
-const pinia = createPinia() // Create Pinia instance
 const app = createApp(App)
-
-app.use(pinia) // Use Pinia
+app.use(i18n)
 app.use(ElementPlus)
+app.use(createPinia())
 app.mount('#app')

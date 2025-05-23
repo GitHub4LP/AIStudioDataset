@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     :model-value="visible"
-    :title="`上传到数据集: ${datasetName}`"
+    :title="t('upload.uploadToDataset', { name: datasetName })"
     width="600px"
     @update:model-value="$emit('update:visible', $event)"
     @closed="resetDialog"
@@ -16,16 +16,16 @@
         :percentage="uploadProgress"
         status="success" 
       />
-      <p v-if="currentUploadingFile">正在上传: {{ currentUploadingFile }} ({{ filesProcessedCount }}/{{ totalFilesToUploadCount }})</p>
-      <p v-else>准备上传 {{ totalFilesToUploadCount }} 个文件...</p>
+      <p v-if="currentUploadingFile">{{ t('upload.uploadingFile', { name: currentUploadingFile, current: filesProcessedCount, total: totalFilesToUploadCount }) }}</p>
+      <p v-else>{{ t('upload.preparingUpload', { count: totalFilesToUploadCount }) }}</p>
     </div>
 
     <el-form label-position="top" :disabled="isLoading">
-      <el-form-item v-if="basePathInDataset" label="目标路径 (数据集内)">
+      <el-form-item v-if="basePathInDataset" :label="t('upload.targetPath')">
         <el-input :value="basePathInDataset" disabled />
       </el-form-item>
 
-      <el-form-item label="选择文件或文件夹">
+      <el-form-item :label="t('upload.selectFilesOrFolder')">
         <el-upload
           ref="uploaderRef"
           action="#"
@@ -39,10 +39,10 @@
           class="local-file-uploader"
         >
           <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
-          <div class="el-upload__text">拖拽文件到此处或 <em>点击选择文件</em></div>
+          <div class="el-upload__text">{{ t('upload.dragOrClick') }}</div>
         </el-upload>
         <el-button @click="triggerFolderInput" style="margin-top: 10px;" :disabled="isLoading">
-          <el-icon style="margin-right: 5px;"><FolderAdd /></el-icon> 选择文件夹
+          <el-icon style="margin-right: 5px;"><FolderAdd /></el-icon> {{ t('upload.selectFolder') }}
         </el-button>
         <input 
           type="file" 
@@ -56,27 +56,27 @@
       </el-form-item>
 
       <div v-if="selectedFiles.length > 0" class="selected-files-preview">
-        <h4>待上传文件 ({{ selectedFiles.length }}):</h4>
+        <h4>{{ t('upload.filesToUpload', { count: selectedFiles.length }) }}:</h4>
         <el-table :data="selectedFiles" size="small" height="150px" stripe border>
-          <el-table-column prop="name" label="文件名" />
-          <el-table-column prop="size" label="大小" width="100">
+          <el-table-column prop="name" :label="t('file.name')" />
+          <el-table-column prop="size" :label="t('file.size')" width="100">
             <template #default="{ row }">{{ formatFileSize(row.size) }}</template>
           </el-table-column>
-          <el-table-column prop="relativePath" label="相对路径 (文件夹内)" />
+          <el-table-column prop="relativePath" :label="t('upload.relativePath')" />
         </el-table>
       </div>
     </el-form>
 
     <template #footer>
       <span class="dialog-footer">
-        <el-button @click="$emit('update:visible', false)" :disabled="isLoading">取消</el-button>
+        <el-button @click="$emit('update:visible', false)" :disabled="isLoading">{{ t('common.cancel') }}</el-button>
         <el-button 
           type="primary" 
           @click="startUploadProcess" 
           :loading="isLoading"
           :disabled="selectedFiles.length === 0"
         >
-          {{ isLoading ? `上传中... (${filesProcessedCount}/${totalFilesToUploadCount})` : '开始上传' }}
+          {{ isLoading ? t('upload.uploadingProgress', { current: filesProcessedCount, total: totalFilesToUploadCount }) : t('upload.startUpload') }}
         </el-button>
       </span>
     </template>
@@ -95,6 +95,9 @@ import { useUploadStore } from '@/stores/uploadStore';
 import { v4 as uuidv4 } from 'uuid';
 import * as apiService from '@/services/apiService';
 import { formatFileSize as utilFormatFileSize } from '@/utils/fileDisplayUtils';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps({
   visible: Boolean,
@@ -198,7 +201,7 @@ const handleFolderInputChange = (event) => {
 
 const startUploadProcess = async () => {
   if (selectedFiles.value.length === 0) {
-    ElMessage.warning('请选择要上传的文件。');
+    ElMessage.warning(t('upload.selectFilesFirst'));
     return;
   }
 
@@ -215,8 +218,8 @@ const startUploadProcess = async () => {
   const batchTaskId = uuidv4();
   const isFolderUpload = selectedFiles.value.some(f => f.relativePath) || selectedFiles.value.length > 1;
   const batchTaskName = isFolderUpload ? 
-    (selectedFiles.value[0]?.relativePath.split('/')[0] || `多文件上传到 ${props.datasetName}`) : 
-    (selectedFiles.value[0]?.name || `文件上传到 ${props.datasetName}`);
+    (selectedFiles.value[0]?.relativePath.split('/')[0] || t('upload.multiFileUpload', { name: props.datasetName })) : 
+    (selectedFiles.value[0]?.name || t('upload.fileUpload', { name: props.datasetName }));
 
   uploadStore.addTask({
     id: batchTaskId,

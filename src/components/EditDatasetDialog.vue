@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     :model-value="visible"
-    title="编辑数据集详情"
+    :title="t('dataset.editTitle')"
     width="50%"
     @update:model-value="$emit('update:visible', $event)"
     :close-on-click-modal="false"
@@ -10,38 +10,38 @@
   >
     <div v-if="isLoadingDetails" class="dialog-loading-placeholder">
         <el-skeleton :rows="3" animated />
-        加载数据集中...
+        {{ t('dataset.loadingDetails') }}
     </div>
     <el-form v-else-if="datasetForm" :model="datasetForm" ref="editDatasetFormRef" label-width="100px">
       <el-form-item
-        label="数据集名称"
+        :label="t('dataset.name')"
         prop="name"
-        :rules="[{ required: true, message: '数据集名称不能为空', trigger: 'blur' }]"
+        :rules="[{ required: true, message: t('dataset.nameRequired'), trigger: 'blur' }]"
       >
         <el-input
           v-model="datasetForm.name"
           :maxlength="constraints.dataset.maxNameLength"
           show-word-limit
-          placeholder="请输入数据集名称"
+          :placeholder="t('dataset.namePlaceholder')"
         />
       </el-form-item>
-      <el-form-item label="数据集描述" prop="description">
+      <el-form-item :label="t('dataset.description')" prop="description">
         <el-input
           v-model="datasetForm.description"
           type="textarea"
           :rows="3"
           :maxlength="constraints.dataset.maxAbsLength"
           show-word-limit
-          placeholder="请输入数据集描述"
+          :placeholder="t('dataset.descriptionPlaceholder')"
         />
       </el-form-item>
-      <el-form-item label="标签" prop="tags">
+      <el-form-item :label="t('dataset.tags')" prop="tags">
         <el-tag
           v-for="(tag, index) in datasetForm.tags"
           :key="index"
           closable
           @close="handleRemoveTag(index)"
-          class="edit-dialog-tag"
+          class="dialog-tag"
         >
           {{ tag }}
         </el-tag>
@@ -62,10 +62,10 @@
           @click="showTagInput"
           :disabled="datasetForm.tags.length >= constraints.tag.maxCount"
         >
-          + 添加标签
+          {{ t('dataset.addTag') }}
         </el-button>
         <div class="tag-tip">
-          最多添加 {{ constraints.tag.maxCount }} 个标签，单个标签长度不超过 {{ constraints.tag.maxLength }}，总长度不超过 {{ constraints.tag.maxLengthAll }}。
+          {{ t('dataset.tagTip', { maxCount: constraints.tag.maxCount, maxLength: constraints.tag.maxLength, maxLengthAll: constraints.tag.maxLengthAll }) }}
         </div>
       </el-form-item>
     </el-form>
@@ -74,9 +74,11 @@
     </div>
     <template #footer>
       <span class="dialog-footer">
-        <el-button @click="$emit('update:visible', false)" :disabled="isSaving">取消</el-button>
+        <el-button @click="$emit('update:visible', false)" :disabled="isSaving">
+          {{ t('common.cancel') }}
+        </el-button>
         <el-button type="primary" @click="handleSaveChanges" :loading="isSaving || isLoadingDetails">
-          保存
+          {{ t('common.save') }}
         </el-button>
       </span>
     </template>
@@ -87,6 +89,9 @@
 import { ref, watch, nextTick, computed } from 'vue';
 import { ElDialog, ElForm, ElFormItem, ElInput, ElTag, ElButton, ElMessage, ElSkeleton } from 'element-plus';
 import { useDatasetStore } from '@/stores/datasetStore';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps({
   visible: Boolean,
@@ -129,7 +134,7 @@ const initializeFormWithDataset = (datasetDetails) => {
     } else {
         // Fallback or error state if dataset details are not available
         datasetForm.value = { name: '', description: '', tags: [], fileIds: [], fileAbsList: [], ispublic: 0 };
-        ElMessage.error("无法加载数据集数据以进行编辑。");
+        ElMessage.error(t('error.loadDatasetFailed'));
     }
     if (editDatasetFormRef.value) {
         editDatasetFormRef.value.clearValidate();
@@ -182,18 +187,18 @@ const handleAddTag = () => {
   let val = tagInputValue.value.trim();
   if (val) {
     if (val.length > constraints.value.tag.maxLength) {
-      ElMessage.warning(`单个标签长度不能超过 ${constraints.value.tag.maxLength} 个字符。`);
+      ElMessage.warning(t('dataset.tagTooLong', { maxLength: constraints.value.tag.maxLength }));
       val = val.slice(0, constraints.value.tag.maxLength);
     }
     if (datasetForm.value.tags.length >= constraints.value.tag.maxCount) {
-      ElMessage.warning(`最多只能添加 ${constraints.value.tag.maxCount} 个标签。`);
+      ElMessage.warning(t('dataset.tooManyTags', { maxCount: constraints.value.tag.maxCount }));
       tagInputVisible.value = false;
       tagInputValue.value = '';
       return;
     }
     const currentTotalTagsLength = datasetForm.value.tags.join('').length;
     if (currentTotalTagsLength + val.length > constraints.value.tag.maxLengthAll && datasetForm.value.tags.length > 0) {
-         ElMessage.warning(`所有标签总长度不能超过 ${constraints.value.tag.maxLengthAll} 个字符。`);
+      ElMessage.warning(t('dataset.tagsTotalTooLong', { maxLengthAll: constraints.value.tag.maxLengthAll }));
     } else if (!datasetForm.value.tags.includes(val)) {
       datasetForm.value.tags.push(val);
     }
@@ -204,24 +209,24 @@ const handleAddTag = () => {
 
 const validateForm = () => {
   if (!datasetForm.value.name || datasetForm.value.name.trim() === '') {
-    ElMessage.error('数据集名称不能为空。'); return false;
+    ElMessage.error(t('dataset.nameRequired')); return false;
   }
   if (datasetForm.value.name.length > constraints.value.dataset.maxNameLength) {
-    ElMessage.error(`数据集名称长度不能超过 ${constraints.value.dataset.maxNameLength}。`); return false;
+    ElMessage.error(t('dataset.nameTooLong', { maxLength: constraints.value.dataset.maxNameLength })); return false;
   }
   if (datasetForm.value.description.length > constraints.value.dataset.maxAbsLength) {
-    ElMessage.error(`数据集描述长度不能超过 ${constraints.value.dataset.maxAbsLength}。`); return false;
+    ElMessage.error(t('dataset.descriptionTooLong', { maxLength: constraints.value.dataset.maxAbsLength })); return false;
   }
   if (datasetForm.value.tags.length > constraints.value.tag.maxCount) {
-    ElMessage.error(`标签数量不能超过 ${constraints.value.tag.maxCount}。`); return false;
+    ElMessage.error(t('dataset.tooManyTags', { maxCount: constraints.value.tag.maxCount })); return false;
   }
   for (const tag of datasetForm.value.tags) {
     if (tag.length > constraints.value.tag.maxLength) {
-      ElMessage.error(`标签 '${tag}' 长度不能超过 ${constraints.value.tag.maxLength}。`); return false;
+      ElMessage.error(t('dataset.tagTooLong', { tag, maxLength: constraints.value.tag.maxLength })); return false;
     }
   }
   if (datasetForm.value.tags.join('').length > constraints.value.tag.maxLengthAll) {
-      ElMessage.error(`所有标签总长度不能超过 ${constraints.value.tag.maxLengthAll}。`); return false;
+    ElMessage.error(t('dataset.tagsTotalTooLong', { maxLengthAll: constraints.value.tag.maxLengthAll })); return false;
   }
   return true;
 };
@@ -241,12 +246,12 @@ const handleSaveChanges = async () => {
     };
     
     await datasetStore.updateDataset({ datasetId: props.datasetId, data: payload });
-    ElMessage.success('数据集更新成功！');
+    ElMessage.success(t('dataset.updateSuccess'));
     emit('update:visible', false); 
     // No need to emit 'dataset-updated', reactivity from store will handle UI updates
   } catch (error) {
-    console.error('保存数据集失败:', error);
-    ElMessage.error(`保存失败: ${error.message}`);
+    console.error(t('dataset.updateFailed'), error);
+    ElMessage.error(`${t('dataset.updateFailed')}: ${error.message}`);
   } finally {
     isSaving.value = false;
   }

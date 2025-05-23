@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     :model-value="visible"
-    title="创建新数据集"
+    :title="t('dataset.createTitle')"
     width="50%"
     @update:model-value="$emit('update:visible', $event)"
     :close-on-click-modal="false"
@@ -11,32 +11,32 @@
   >
     <div v-if="isLoadingConstraints" class="dialog-loading-placeholder">
         <el-skeleton :rows="2" animated />
-        加载约束条件...
+        {{ t('dataset.loadingConstraints') }}
     </div>
     <el-form v-else :model="datasetForm" ref="createDatasetFormRef" label-width="100px">
       <el-form-item
-        label="数据集名称"
+        :label="t('dataset.name')"
         prop="name"
-        :rules="[{ required: true, message: '数据集名称不能为空', trigger: 'blur' }]"
+        :rules="[{ required: true, message: t('dataset.nameRequired'), trigger: 'blur' }]"
       >
         <el-input
           v-model="datasetForm.name"
           :maxlength="constraints.dataset.maxNameLength"
           show-word-limit
-          placeholder="请输入数据集名称"
+          :placeholder="t('dataset.namePlaceholder')"
         />
       </el-form-item>
-      <el-form-item label="数据集描述" prop="description">
+      <el-form-item :label="t('dataset.description')" prop="description">
         <el-input
           v-model="datasetForm.description"
           type="textarea"
           :rows="3"
           :maxlength="constraints.dataset.maxAbsLength"
           show-word-limit
-          placeholder="请输入数据集描述"
+          :placeholder="t('dataset.descriptionPlaceholder')"
         />
       </el-form-item>
-      <el-form-item label="标签" prop="tags">
+      <el-form-item :label="t('dataset.tags')" prop="tags">
         <el-tag
           v-for="(tag, index) in datasetForm.tags"
           :key="index"
@@ -63,38 +63,33 @@
           @click="showTagInput"
           :disabled="datasetForm.tags.length >= constraints.tag.maxCount"
         >
-          + 添加标签
+          {{ t('dataset.addTag') }}
         </el-button>
         <div class="tag-tip">
-          最多添加 {{ constraints.tag.maxCount }} 个标签，单个标签长度不超过 {{ constraints.tag.maxLength }}，总长度不超过 {{ constraints.tag.maxLengthAll }}。
+          {{ t('dataset.tagTip', { maxCount: constraints.tag.maxCount, maxLength: constraints.tag.maxLength, maxLengthAll: constraints.tag.maxLengthAll }) }}
         </div>
       </el-form-item>
       
-      <el-form-item label="包含文件">
+      <el-form-item :label="t('dataset.files')">
         <div v-if="filesForDataset && filesForDataset.length > 0" class="files-summary-in-dialog">
-            <p>将包含 {{ filesForDataset.length }} 个文件:</p>
+            <p>{{ t('dataset.filesSummary', { count: filesForDataset.length }) }}</p>
             <ul>
                 <li v-for="file in filesForDataset.slice(0, 5)" :key="file.fileId">
-                    {{ file.name || file.fileAbs }} <!-- Display name if available, else fileAbs -->
+                    {{ file.name || file.fileAbs }}
                 </li>
-                <li v-if="filesForDataset.length > 5">...等</li>
+                <li v-if="filesForDataset.length > 5">{{ t('dataset.moreFiles') }}</li>
             </ul>
         </div>
         <div v-else>
-            <p>无文件。这通常不应发生，请先选择文件。</p>
+            <p>{{ t('dataset.noFiles') }}</p>
         </div>
       </el-form-item>
-
     </el-form>
     <template #footer>
       <span class="dialog-footer">
-        <el-button @click="$emit('update:visible', false)" :disabled="isCreating">取消</el-button>
-        <el-button 
-            type="primary" 
-            @click="handleCreateDataset" 
-            :loading="isCreating || isLoadingConstraints"
-        >
-          创建
+        <el-button @click="$emit('update:visible', false)">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" @click="handleSubmit" :loading="isSubmitting">
+          {{ t('common.confirm') }}
         </el-button>
       </span>
     </template>
@@ -105,6 +100,9 @@
 import { ref, watch, nextTick, computed } from 'vue';
 import { ElDialog, ElForm, ElFormItem, ElInput, ElTag, ElButton, ElMessage, ElSkeleton } from 'element-plus';
 import { useDatasetStore } from '@/stores/datasetStore';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps({
   visible: Boolean,
@@ -170,7 +168,7 @@ const showTagInput = () => {
     tagInputVisible.value = true;
     nextTick(() => { tagInputRef.value?.focus(); });
   } else {
-    ElMessage.warning(`最多只能添加 ${constraints.value.tag.maxCount} 个标签。`);
+    ElMessage.warning(t('dataset.tooManyTags', { maxCount: constraints.value.tag.maxCount }));
   }
 };
 
@@ -178,16 +176,16 @@ const handleAddTag = () => {
   let val = tagInputValue.value.trim();
   if (val) {
     if (val.length > constraints.value.tag.maxLength) {
-      ElMessage.warning(`单个标签长度不能超过 ${constraints.value.tag.maxLength} 个字符。`);
+      ElMessage.warning(t('dataset.tagTooLong', { maxLength: constraints.value.tag.maxLength }));
       val = val.slice(0, constraints.value.tag.maxLength);
     }
     if (datasetForm.value.tags.length >= constraints.value.tag.maxCount) {
-      ElMessage.warning(`最多只能添加 ${constraints.value.tag.maxCount} 个标签。`);
+      ElMessage.warning(t('dataset.tooManyTags', { maxCount: constraints.value.tag.maxCount }));
       tagInputVisible.value = false; tagInputValue.value = ''; return;
     }
     const currentTotalTagsLength = datasetForm.value.tags.join('').length;
     if (currentTotalTagsLength + val.length > constraints.value.tag.maxLengthAll && datasetForm.value.tags.length > 0) {
-         ElMessage.warning(`所有标签总长度不能超过 ${constraints.value.tag.maxLengthAll} 个字符。`);
+         ElMessage.warning(t('dataset.tagsTotalTooLong', { maxLengthAll: constraints.value.tag.maxLengthAll }));
     } else if (!datasetForm.value.tags.includes(val)) {
       datasetForm.value.tags.push(val);
     }
@@ -197,7 +195,7 @@ const handleAddTag = () => {
 
 const validateForm = () => {
   if (!datasetForm.value.name || datasetForm.value.name.trim() === '') {
-    ElMessage.error('数据集名称不能为空。'); return false;
+    ElMessage.error(t('dataset.nameRequired')); return false;
   }
   // Additional validations based on constraints... (similar to EditDatasetDialog)
   return true;
@@ -218,12 +216,12 @@ const handleCreateDataset = async () => {
     // filesForDataset prop should already contain { fileId, fileAbs }
     await datasetStore.createNewDataset(datasetDetails, props.filesForDataset || []);
     
-    ElMessage.success('数据集创建成功！');
+    ElMessage.success(t('dataset.createSuccess'));
     emit('dataset-created'); // Inform parent (ExplorerPanel)
     emit('update:visible', false);
   } catch (error) {
-    console.error('创建数据集失败:', error);
-    ElMessage.error(`创建失败: ${error.message}`);
+    console.error(t('dataset.createFailed'), error);
+    ElMessage.error(`${t('dataset.createFailed')}: ${error.message}`);
   } finally {
     isCreating.value = false;
   }
@@ -232,30 +230,82 @@ const handleCreateDataset = async () => {
 </script>
 
 <style scoped>
-.dialog-tag { margin-right: 5px; margin-bottom: 5px; }
-.tag-input { width: 120px; margin-right: 5px; vertical-align: bottom; }
-.button-new-tag { height: 32px; line-height: 30px; padding-top: 0; padding-bottom: 0; }
-.tag-tip { font-size: 12px; color: #909399; margin-top: 5px; line-height: 1.2; }
-.dialog-loading-placeholder { padding: 20px; text-align: center; color: #909399; }
-.files-summary-in-dialog {
-    font-size: 13px;
-    color: #606266; /* Element Plus default text color */
-}
-.files-summary-in-dialog ul {
-    list-style-type: disc;
-    padding-left: 20px;
-    max-height: 80px; /* Limit height for long lists */
-    overflow-y: auto;
-}
-.files-summary-in-dialog li {
-    margin-bottom: 3px;
+.dialog-tag {
+  margin-right: 5px;
+  margin-bottom: 5px;
+  background-color: var(--el-fill-color-light);
+  color: var(--el-text-color-regular);
+  border: 1px solid var(--el-border-color-light);
 }
 
-/* Dark theme considerations */
-.create-dataset-dialog :deep(.el-dialog__body) {
-  /* background-color: #2a2a2a; */
+.tag-input {
+  width: 120px;
+  margin-right: 5px;
+  vertical-align: bottom;
 }
-.create-dataset-dialog :deep(.el-form-item__label) {
-  /* color: #c0c0c0; */
+
+.button-new-tag {
+  height: 32px;
+  line-height: 30px;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+.tag-tip {
+  font-size: 12px;
+  color: var(--el-text-color-regular);
+  margin-top: 5px;
+  line-height: 1.2;
+}
+
+.dialog-loading-placeholder {
+  padding: 20px;
+  text-align: center;
+  color: var(--el-text-color-regular);
+}
+
+.files-summary-in-dialog {
+  font-size: 13px;
+  color: var(--el-text-color-regular);
+}
+
+.files-summary-in-dialog ul {
+  list-style-type: disc;
+  padding-left: 20px;
+  max-height: 80px;
+  overflow-y: auto;
+}
+
+.files-summary-in-dialog li {
+  margin-bottom: 3px;
+}
+
+:deep(.el-dialog__body) {
+  background-color: var(--el-bg-color);
+  color: var(--el-text-color-primary);
+}
+
+:deep(.el-form-item__label) {
+  color: var(--el-text-color-primary);
+}
+
+:deep(.el-input__inner) {
+  background-color: var(--el-bg-color);
+  color: var(--el-text-color-primary);
+  border-color: var(--el-border-color-light);
+}
+
+:deep(.el-input__inner:focus) {
+  border-color: var(--el-color-primary);
+}
+
+:deep(.el-textarea__inner) {
+  background-color: var(--el-bg-color);
+  color: var(--el-text-color-primary);
+  border-color: var(--el-border-color-light);
+}
+
+:deep(.el-textarea__inner:focus) {
+  border-color: var(--el-color-primary);
 }
 </style>

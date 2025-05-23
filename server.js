@@ -3,9 +3,19 @@ import { fileURLToPath } from 'url'
 import { dirname, join, normalize, relative } from 'path'
 import { readdir, stat, readFile } from 'fs/promises'
 import { createServer as createViteServer } from 'vite'
-import { AI_Studio, validateDatasetParams } from './aistudio.js'
+import { AI_Studio, validateDatasetParams } from './src/api/aistudio.js'
+import { ALLOWED_PATHS } from './src/config/paths.js'
 import multer from 'multer'
 import fs from 'fs'
+import {
+  logger,
+  logPerformance,
+  logSystemResources,
+  logError,
+  logSecurity,
+  logBusiness,
+  requestLogger
+} from './src/config/logger.js'
 
 // 数据集约束条件
 const DATASET_CONSTRAINTS = {
@@ -24,25 +34,6 @@ const DATASET_CONSTRAINTS = {
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
-
-// 允许的路径配置
-const ALLOWED_PATHS = [
-  {
-    name: '项目根目录',
-    path: __dirname,
-    alias: '.'
-  },
-  {
-    name: '上传目录',
-    path: join(__dirname, 'uploads'),
-    alias: 'uploads'
-  },
-  {
-    name: '下载目录',
-    path: 'D:/Downloads',
-    alias: 'downloads'
-  }
-]
 
 // 检查路径是否在允许范围内，并返回规范化的路径
 function normalizeAndValidatePath(path) {
@@ -122,25 +113,42 @@ async function initAIStudio() {
 async function createServer() {
   const app = express()
   
+  // 添加请求日志中间件
+  app.use(requestLogger)
+  
   // 创建 Vite 服务器
+  const startTime = Date.now()
   const vite = await createViteServer({
     server: { middlewareMode: true },
     appType: 'custom'
   })
+  logPerformance('Vite服务器创建', startTime)
+  logger.info('Vite 服务器已创建')
 
   // 初始化 AI Studio
   try {
     if (!aiStudio) {
+      logger.info('正在初始化 AI Studio...')
+      const initStartTime = Date.now()
       await initAIStudio()
+      logPerformance('AI Studio初始化', initStartTime)
+      logger.info('AI Studio 初始化成功')
     }
     // 获取数据集列表
+    const listStartTime = Date.now()
     const list_resp = await aiStudio.getPrivateList("", 1, 1)
+    logPerformance('获取数据集列表', listStartTime)
     if (list_resp && list_resp.body && list_resp.body.result) {
-      console.log(`当前共有 ${list_resp.body.result.totalCount} 个数据集`)
+      logger.info('数据集统计', {
+        totalCount: list_resp.body.result.totalCount
+      })
     }
   } catch (error) {
-    console.error('获取数据集统计失败:', error)
+    logError('获取数据集统计失败', error)
   }
+
+  // 定期记录系统资源使用情况
+  setInterval(logSystemResources, 5 * 60 * 1000) // 每5分钟记录一次
 
   // 使用 vite 的中间件
   app.use(vite.middlewares)
@@ -150,13 +158,20 @@ async function createServer() {
   app.get('/api/files', async (req, res) => {
     try {
       const { path = '.' } = req.query
+      logger.debug('获取文件列表', { path })
+      
       const { fullPath, currentPath, isAllowed } = normalizeAndValidatePath(path)
       
       if (!isAllowed) {
+        logSecurity('非法路径访问', { path, fullPath })
         return res.status(403).json({ error: '访问被拒绝：路径超出允许范围' })
       }
 
       const items = await readdir(fullPath)
+      logger.debug('文件列表获取成功', {
+        path,
+        itemCount: items.length
+      })
       const fileList = await Promise.all(
         items.map(async (name) => {
           const itemPath = join(fullPath, name)
@@ -175,7 +190,7 @@ async function createServer() {
         files: fileList
       })
     } catch (error) {
-      console.error('获取文件列表失败:', error)
+      logError('获取文件列表失败', error)
       res.status(500).json({ error: '获取文件列表失败' })
     }
   })
@@ -183,11 +198,14 @@ async function createServer() {
   // 处理更新数据集
   app.put('/api/datasets/:datasetId', async (req, res) => {
     try {
+      const { datasetId } = req.params
+      logger.info('开始更新数据集', { datasetId })
+      
       if (!aiStudio) {
+        logger.info('AI Studio 未初始化，正在初始化...')
         await initAIStudio()
       }
 
-      const { datasetId } = req.params
       const {
         datasetName,
         datasetAbs,
@@ -196,6 +214,8 @@ async function createServer() {
         fileAbsList,
         ispublic
       } = req.body
+
+      logBusiness('业务操作', { operation: 'update', details: req.body })
 
       // Validate datasetId
       if (!datasetId) {
@@ -272,12 +292,16 @@ async function createServer() {
 
   // 处理服务器文件上传到数据集
   app.post('/api/upload-to-dataset', async (req, res) => {
+    const uploadStartTime = Date.now()
     try {
-      if (!aiStudio) {
-        await initAIStudio()
-      }
-
       const { filePath, fileName, folderPath, currentPath, selectedBasePath } = req.body
+      logger.info('开始上传文件到数据集', {
+        fileName,
+        folderPath,
+        currentPath,
+        selectedBasePath,
+        timestamp: new Date().toISOString()
+      })
 
       if (!filePath || !fileName) {
         throw new Error('缺少必要参数')
@@ -298,6 +322,7 @@ async function createServer() {
 
         const result = normalizeAndValidatePath(targetPath)
         if (!result.isAllowed) {
+          console.warn(`文件上传被拒绝: ${targetPath} 超出允许范围`)
           return res.status(403).json({ error: '访问被拒绝：路径超出允许范围' })
         }
         fullPath = result.fullPath
@@ -307,17 +332,21 @@ async function createServer() {
       try {
         await stat(fullPath)
       } catch (error) {
+        console.error(`文件不存在: ${fullPath}`, error)
         return res.status(404).json({ error: `文件不存在: ${fullPath}` })
       }
 
       const stats = await stat(fullPath)
       const fileSize = stats.size
+      console.log(`文件信息: ${fileName}, 大小: ${Math.round(fileSize / 1024 / 1024)}MB`)
 
       if (stats.isDirectory()) {
+        console.log(`开始上传目录: ${fullPath}`)
         // Helper function to recursively upload files in a directory
         async function uploadDirectory(currentDir, baseDatasetPath) {
           const results = []
           const items = await readdir(currentDir)
+          console.log(`目录 ${currentDir} 中包含 ${items.length} 个项目`)
 
           for (const item of items) {
             const itemPath = join(currentDir, item)
@@ -327,8 +356,11 @@ async function createServer() {
             const normalizedFileAbs = fileAbs.split('\\').join('/')
 
             if (itemStats.isDirectory()) {
+              console.log(`处理子目录: ${itemPath}`)
               results.push(...await uploadDirectory(itemPath, baseDatasetPath))
             } else {
+              console.log(`开始上传文件: ${itemPath}`)
+              const fileUploadStartTime = Date.now()
               const { client, fileKey, bucketName } = await aiStudio.bosClient(false)
               const uploadTask = client.putSuperObject({
                 bucketName,
@@ -340,9 +372,15 @@ async function createServer() {
               while (!uploadTask.isCompleted()) {
                 await new Promise(resolve => setTimeout(resolve, 100))
               }
+              logPerformance(`文件上传 ${item}`, fileUploadStartTime)
 
+              console.log(`文件 ${item} 上传完成，开始添加到数据集`)
+              const addFileStartTime = Date.now()
               const addFileResp = await aiStudio.addFile(item, fileKey, false)
+              logPerformance(`添加到数据集 ${item}`, addFileStartTime)
+
               if (addFileResp && addFileResp.body && addFileResp.body.result && addFileResp.body.result.fileId) {
+                console.log(`文件 ${item} 成功添加到数据集，fileId: ${addFileResp.body.result.fileId}`)
                 results.push({
                   success: true,
                   fileId: addFileResp.body.result.fileId,
@@ -370,8 +408,12 @@ async function createServer() {
         const allSuccessful = validResults.every(r => r.success)
         
         if (validResults.length === 0) {
+          console.warn(`目录 ${fullPath} 中没有可上传的文件`)
           return res.status(404).json({ success: false, error: '目录中没有可上传的文件' })
         }
+
+        logPerformance('目录上传完成', uploadStartTime)
+        console.log(`目录上传完成，成功: ${validResults.filter(r => r.success).length}/${validResults.length} 个文件`)
 
         res.json({
           success: allSuccessful,
@@ -380,6 +422,7 @@ async function createServer() {
         })
 
       } else {
+        console.log(`开始上传单个文件: ${fullPath}`)
         const { client, fileKey, bucketName } = await aiStudio.bosClient(false)
 
         // 上传文件到 BOS
@@ -392,22 +435,30 @@ async function createServer() {
 
         // 启动上传
         await uploadTask.start()
+        console.log(`文件 ${fileName} 开始上传到 BOS`)
 
         // 等待上传完成
         while (!uploadTask.isCompleted()) {
           await new Promise(resolve => setTimeout(resolve, 100))
         }
+        console.log(`文件 ${fileName} 上传到 BOS 完成`)
 
         // 添加到数据集
+        console.log(`开始将文件 ${fileName} 添加到数据集`)
+        const addFileStartTime = Date.now()
         const addFileResp = await aiStudio.addFile(fileName, fileKey, false)
+        logPerformance(`添加到数据集 ${fileName}`, addFileStartTime)
+
         if (!addFileResp || !addFileResp.body || !addFileResp.body.result || !addFileResp.body.result.fileId) {
           throw new Error('添加到数据集失败: 响应格式错误')
         }
         const fileId = addFileResp.body.result.fileId
+        console.log(`文件 ${fileName} 成功添加到数据集，fileId: ${fileId}`)
 
         // 等待一段时间确保文件处理完成
         await new Promise(resolve => setTimeout(resolve, 2000))
 
+        logPerformance('文件上传完成', uploadStartTime)
         res.json({
           success: true,
           fileId,
@@ -415,7 +466,7 @@ async function createServer() {
         })
       }
     } catch (error) {
-      console.error('上传到数据集失败:', error.message)
+      logError('上传到数据集失败', error)
       res.status(500).json({ 
         success: false, 
         error: error.message || '上传到数据集失败'
@@ -426,15 +477,17 @@ async function createServer() {
   // 处理本地文件上传到数据集
   app.post('/api/upload-local-to-dataset', upload.single('file'), async (req, res) => {
     try {
-      if (!aiStudio) {
-        await initAIStudio()
-      }
-
       if (!req.file) {
+        console.warn('未收到上传文件')
         throw new Error('未收到文件')
       }
 
       const { originalname, path: tempPath, size: fileSize } = req.file
+      console.log('收到本地文件上传:', {
+        fileName: originalname,
+        fileSize,
+        tempPath
+      })
       // 确保文件名使用UTF-8编码
       const decodedFileName = Buffer.from(originalname, 'latin1').toString('utf8')
       const datasetName = req.body.datasetName || decodedFileName
@@ -529,7 +582,10 @@ async function createServer() {
   // 创建数据集
   app.post('/api/create-dataset', async (req, res) => {
     try {
+      console.log('开始创建新数据集')
+      
       if (!aiStudio) {
+        console.log('AI Studio 未初始化，正在初始化...')
         await initAIStudio()
       }
 
@@ -537,6 +593,7 @@ async function createServer() {
       const list_resp = await aiStudio.getPrivateList("", 1, 1)
       if (list_resp && list_resp.body && list_resp.body.result) {
         const currentCount = list_resp.body.result.totalCount
+        console.log(`当前数据集数量: ${currentCount}/${DATASET_CONSTRAINTS.MAX_DATASETS_COUNT}`)
         if (currentCount >= DATASET_CONSTRAINTS.MAX_DATASETS_COUNT) {
           return res.status(400).json({
             success: false,
@@ -610,11 +667,14 @@ async function createServer() {
   // 处理URL抓取上传到数据集
   app.post('/api/fetch-to-dataset', async (req, res) => {
     try {
-      if (!aiStudio) {
-        await initAIStudio()
-      }
-
       const { url, fileName, referer, userAgent, datasetName, datasetAbs, tags } = req.body
+      console.log('开始URL抓取上传:', {
+        url,
+        fileName,
+        datasetName,
+        tagsCount: tags?.length
+      })
+
       if (!url || !fileName) {
         throw new Error('缺少必要参数')
       }
@@ -846,11 +906,14 @@ async function createServer() {
   // 处理删除数据集
   app.delete('/api/datasets/:datasetId', async (req, res) => {
     try {
+      const { datasetId } = req.params
+      console.log(`开始删除数据集 ${datasetId}`)
+      
       if (!aiStudio) {
+        console.log('AI Studio 未初始化，正在初始化...')
         await initAIStudio()
       }
 
-      const { datasetId } = req.params
       if (!datasetId) {
         throw new Error('缺少数据集ID')
       }
@@ -896,11 +959,9 @@ async function createServer() {
   // 删除数据集中的文件
   app.delete('/api/datasets/:datasetId/files/:fileId', async (req, res) => {
     try {
-      if (!aiStudio) {
-        await initAIStudio()
-      }
-
       const { datasetId, fileId } = req.params;
+      console.log(`开始从数据集 ${datasetId} 中删除文件 ${fileId}`);
+
       if (!datasetId || !fileId) {
         return res.status(400).json({ success: false, error: '数据集ID和文件ID都是必需的' });
       }
@@ -992,7 +1053,22 @@ async function createServer() {
 
   // 优化错误处理
   app.use((err, req, res, next) => {
-    console.error('服务器错误:', err)
+    logger.error('服务器错误', {
+      error: {
+        message: err.message,
+        stack: err.stack
+      },
+      request: {
+        url: req.originalUrl,
+        method: req.method,
+        body: req.body,
+        params: req.params,
+        query: req.query
+      },
+      timestamp: new Date().toISOString()
+    })
+    // 记录系统资源状态
+    logSystemResources()
     res.status(500).json({
       success: false,
       error: process.env.NODE_ENV === 'production' ? '服务器内部错误' : err.message
@@ -1001,16 +1077,38 @@ async function createServer() {
 
   const PORT = 3000
   app.listen(PORT, () => {
-    console.log(`服务器运行在 http://localhost:${PORT}`)
+    logger.info('服务器启动', {
+      port: PORT,
+      environment: process.env.NODE_ENV || 'development',
+      nodeVersion: process.version
+    })
+    // 记录初始系统资源状态
+    logSystemResources()
   })
 }
 
-// 优化日志记录
-const logError = (message, error) => {
-  console.error(`${message}:`, error)
-  if (error.response) {
-    console.error('响应数据:', error.response.data)
-  }
-}
+// 处理未捕获的异常
+process.on('uncaughtException', (error) => {
+  logger.error('未捕获的异常', {
+    error: {
+      message: error.message,
+      stack: error.stack
+    },
+    timestamp: new Date().toISOString()
+  })
+  // 记录系统资源状态
+  logSystemResources()
+})
+
+// 处理未处理的 Promise 拒绝
+process.on('unhandledRejection', (reason, promise) => {
+  logger.error('未处理的 Promise 拒绝', {
+    reason,
+    promise,
+    timestamp: new Date().toISOString()
+  })
+  // 记录系统资源状态
+  logSystemResources()
+})
 
 createServer() 

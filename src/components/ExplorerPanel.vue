@@ -2,23 +2,23 @@
   <div class="explorer-panel-container">
     <div class="explorer-panel" @click="closeContextMenu">
       <el-collapse v-model="activeCollapseNames">
-        <el-collapse-item name="datasets" title="数据集">
+        <el-collapse-item name="datasets" :title="t('dataset.name')">
           <el-button
             type="primary"
             link
             size="small"
             @click.stop="handleOpenCreateEmptyDatasetDialog"
             class="collapse-header-action-btn"
-            title="创建新的空数据集"
+            :title="t('dataset.createEmpty')"
           >
-            <el-icon><Plus /></el-icon> 新建空数据集
+            <el-icon><Plus /></el-icon> {{ t('dataset.createEmpty') }}
           </el-button>
           <div v-if="datasetStore.isLoadingDatasets && Object.keys(datasetStore.detailedDatasets).length === 0" class="dataset-loading-indicator">
             <el-skeleton :rows="3" animated />
-            <div class="progress-text">加载中... {{ datasetStore.loadedPages }}/{{ datasetStore.totalPages }} 页</div>
+            <div class="progress-text">{{ t('common.loading') }} {{ datasetStore.loadedPages }}/{{ datasetStore.totalPages }} {{ t('common.page') }}</div>
           </div>
           <div v-else-if="datasetStore.datasetError" class="dataset-error-message">
-            加载数据集出错: {{ datasetStore.datasetError }}
+            {{ t('error.loadDatasetFailed') }}: {{ datasetStore.datasetError }}
           </div>
           <el-tree
             v-else
@@ -27,7 +27,7 @@
             node-key="id"
             highlight-current
             class="dataset-tree"
-            empty-text="暂无数据集"
+            :empty-text="t('dataset.empty')"
             @node-click="handleDatasetTreeNodeClick"
             @node-contextmenu="handleNodeContextMenu"
           >
@@ -66,14 +66,14 @@
             </template>
           </el-tree>
         </el-collapse-item>
-        <el-collapse-item title="文件源 (通过文件创建新数据集)" name="fileSources">
+        <el-collapse-item :title="t('file.source')" name="fileSources">
           <el-tabs v-model="activeFileSourceTab" @tab-change="handleFileSourceTabChange">
-            <el-tab-pane label="服务器文件" name="server">
+            <el-tab-pane :label="t('file.server')" name="server">
               <div class="server-file-browser">
                 <div class="path-selector">
                   <el-select 
                       v-model="fileBrowserStore.selectedBasePath" 
-                      placeholder="选择基础路径" 
+                      :placeholder="t('file.selectBasePath')" 
                       @change="fileBrowserStore.changeBasePath" 
                       size="small"
                   >
@@ -101,7 +101,7 @@
                   <el-skeleton :rows="3" animated />
                 </div>
                  <div v-else-if="fileBrowserStore.error" class="dataset-error-message">
-                   获取文件列表失败: {{ fileBrowserStore.error }}
+                    {{ t('file.getFileListFailed') }}: {{ fileBrowserStore.error }}
                  </div>
                 <el-table
                   v-else-if="fileBrowserStore.serverFiles.length > 0"
@@ -111,12 +111,12 @@
                   size="small"
                   :show-header="false"
                   row-class-name="file-table-row"
-                  empty-text="当前目录为空"
+                  :empty-text="t('file.empty')"
                   @selection-change="handleNewDatasetServerFileSelectionChange"
                   ref="serverFileSelectionTableRef"
                 >
                   <el-table-column type="selection" width="45" :selectable="isServerFileSelectableForNewDataset" />
-                  <el-table-column prop="name" label="文件名">
+                  <el-table-column prop="name" :label="t('file.name')">
                     <template #default="{ row }">
                       <div class="file-name" @click="handleServerFileOrFolderClick(row)">
                         <el-icon v-if="row.type === '文件夹'"><Folder /></el-icon>
@@ -127,11 +127,11 @@
                   </el-table-column>
                 </el-table>
                 <div v-else class="empty-state">
-                  <el-empty description="当前目录为空" :image-size="50" />
+                  <el-empty :description="t('file.empty')" :image-size="50" />
                 </div>
               </div>
             </el-tab-pane>
-            <el-tab-pane label="本地文件" name="local">
+            <el-tab-pane :label="t('file.local')" name="local">
               <div class="local-file-source-tab">
                 <el-upload
                   ref="localFileUploaderRef"
@@ -146,60 +146,60 @@
                   class="local-file-uploader"
                 >
                   <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
-                  <div class="el-upload__text">拖拽文件到此处或 <em>点击上传</em></div>
+                  <div class="el-upload__text">{{ t('file.dragOrClick') }}</div>
                   <template #tip>
                     <div class="el-upload__tip">
-                      文件处理后将自动添加至下方"已选文件"列表。
+                      {{ t('file.autoAddTip') }}
                     </div>
                   </template>
                 </el-upload>
-                 <el-button @click="triggerLocalFolderInput" size="small" style="margin-top: 10px;">选择文件夹</el-button>
-                 <input 
+                <el-button @click="triggerLocalFolderInput" size="small" style="margin-top: 10px;">{{ t('file.selectFolder') }}</el-button>
+                <input 
                   type="file" 
                   webkitdirectory 
                   multiple 
                   style="display: none" 
                   ref="localFolderInputRef" 
                   @change="handleLocalFolderInputChange" 
-                 />
+                />
               </div>
             </el-tab-pane>
-            <el-tab-pane label="URL抓取" name="url">
-               <div class="url-fetch-source-tab">
-                  <el-form :model="urlFetchForm" ref="urlFetchFormRef" label-width="80px" size="small">
-                      <el-form-item label="文件URL" prop="url" :rules="[{ required: true, message: '请输入URL', trigger: 'blur' }, { type: 'url', message: '请输入有效的URL', trigger: ['blur', 'change'] }]">
-                          <el-input v-model="urlFetchForm.url" placeholder="http(s)://..."></el-input>
-                      </el-form-item>
-                      <el-form-item label="文件名" prop="fileName" :rules="[{ required: true, message: '请输入文件名', trigger: 'blur' }]">
-                          <el-input v-model="urlFetchForm.fileName" placeholder="例如: data.zip"></el-input>
-                      </el-form-item>
-                      <el-form-item label="Referer" prop="referer">
-                          <el-input v-model="urlFetchForm.referer" placeholder="可选"></el-input>
-                      </el-form-item>
-                      <el-form-item label="User-Agent" prop="userAgent">
-                          <el-input v-model="urlFetchForm.userAgent" placeholder="可选"></el-input>
-                      </el-form-item>
-                      <el-form-item>
-                          <el-button 
-                              type="primary" 
-                              @click="handleUrlFetchAndAddToList" 
-                              :loading="isProcessingUrlFile"
-                              style="width: 100%;"
-                          >
-                            {{ isProcessingUrlFile ? '抓取中...' : '抓取并添加文件' }}
-                          </el-button>
-                      </el-form-item>
-                  </el-form>
-               </div>
+            <el-tab-pane :label="t('file.urlFetch')" name="url">
+              <div class="url-fetch-source-tab">
+                <el-form :model="urlFetchForm" ref="urlFetchFormRef" label-width="80px" size="small">
+                  <el-form-item :label="t('file.url')" prop="url" :rules="[{ required: true, message: t('file.urlRequired'), trigger: 'blur' }, { type: 'url', message: t('file.urlInvalid'), trigger: ['blur', 'change'] }]">
+                    <el-input v-model="urlFetchForm.url" :placeholder="t('file.urlPlaceholder')"></el-input>
+                  </el-form-item>
+                  <el-form-item :label="t('file.name')" prop="fileName" :rules="[{ required: true, message: t('file.nameRequired'), trigger: 'blur' }]">
+                    <el-input v-model="urlFetchForm.fileName" :placeholder="t('file.namePlaceholder')"></el-input>
+                  </el-form-item>
+                  <el-form-item :label="t('file.referer')" prop="referer">
+                    <el-input v-model="urlFetchForm.referer" :placeholder="t('file.optional')"></el-input>
+                  </el-form-item>
+                  <el-form-item :label="t('file.userAgent')" prop="userAgent">
+                    <el-input v-model="urlFetchForm.userAgent" :placeholder="t('file.optional')"></el-input>
+                  </el-form-item>
+                  <el-form-item>
+                    <el-button 
+                      type="primary" 
+                      @click="handleUrlFetchAndAddToList" 
+                      :loading="isProcessingUrlFile"
+                      style="width: 100%;"
+                    >
+                      {{ isProcessingUrlFile ? t('file.fetching') : t('file.fetchAndAdd') }}
+                    </el-button>
+                  </el-form-item>
+                </el-form>
+              </div>
             </el-tab-pane>
           </el-tabs>
 
           <div v-if="allSelectedFilesForNewDataset.length > 0" class="selected-files-panel-for-new-dataset">
-            <h4>已选文件 (准备创建新数据集):</h4>
+            <h4>{{ t('file.selectedFiles') }}:</h4>
             <el-table :data="allSelectedFilesForNewDataset" size="small" height="120px" :key="allSelectedFilesForNewDataset.length">
-              <el-table-column prop="name" label="文件名" />
-              <el-table-column prop="source" label="来源" width="100" />
-              <el-table-column label="操作" width="60">
+              <el-table-column prop="name" :label="t('file.name')" />
+              <el-table-column prop="source" :label="t('file.source')" width="100" />
+              <el-table-column :label="t('file.operation')" width="60">
                 <template #default="{ row }">
                   <el-button link type="danger" size="small" @click="removeFileFromNewDatasetSelection(row)">
                     <el-icon><Delete /></el-icon>
@@ -233,15 +233,15 @@
         <ul>
           <li v-if="contextMenuTargetNode && (contextMenuTargetNode.type === 'dataset' || contextMenuTargetNode.type === 'folder')" 
               @click="triggerUploadLocalToNode">
-            <el-icon><Upload /></el-icon> 上传本地文件/文件夹到此...
+            <el-icon><Upload /></el-icon> {{ t('file.uploadLocalFiles') }}
           </li>
           <li v-if="contextMenuTargetNode && (contextMenuTargetNode.type === 'dataset' || contextMenuTargetNode.type === 'folder')" 
               @click="triggerAddServerItemsToNode">
-            <el-icon><FolderAdd /></el-icon> 从服务器添加文件/文件夹到此...
+            <el-icon><FolderAdd /></el-icon> {{ t('file.addServerItems') }}
           </li>
           <li v-if="contextMenuTargetNode && (contextMenuTargetNode.type === 'dataset' || contextMenuTargetNode.type === 'folder')" 
               @click="triggerAddUrlToNode">
-            <el-icon><LinkIcon /></el-icon> 通过URL添加文件到此...
+            <el-icon><LinkIcon /></el-icon> {{ t('file.addUrlFile') }}
           </li>
         </ul>
       </div>
@@ -303,10 +303,12 @@ import { getFileIconPath, getFileIconColor, formatFileSize } from '@/utils/fileD
 import { useDatasetStore } from '@/stores/datasetStore';
 import { useUIStore } from '@/stores/uiStore';
 import { useFileBrowserStore } from '@/stores/fileBrowserStore';
+import { useI18n } from 'vue-i18n'
 
 const datasetStore = useDatasetStore();
 const uiStore = useUIStore();
 const fileBrowserStore = useFileBrowserStore();
+const { t } = useI18n()
 
 const activeCollapseNames = ref(['datasets', 'fileSources']);
 const activeFileSourceTab = ref('server');
@@ -334,10 +336,10 @@ const isProcessingUrlFile = ref(false);
 const processedFilesForDialog = ref([]); 
 
 const overallProcessingButtonText = computed(() => {
-    if (isProcessingNewDatasetFiles.value) return '处理服务器文件中...';
-    if (isProcessingLocalFiles.value) return '处理本地文件中...';
-    if (isProcessingUrlFile.value) return '处理URL文件中...';
-    return '通过文件创建新数据集';
+    if (isProcessingNewDatasetFiles.value) return t('file.processingServerFiles');
+    if (isProcessingLocalFiles.value) return t('file.processingLocalFiles');
+    if (isProcessingUrlFile.value) return t('file.processingUrlFiles');
+    return t('file.createDataset');
 });
 
 const urlFetchFormRef = ref(null);
@@ -415,24 +417,29 @@ const handleDatasetTreeNodeClick = async (data) => {
 const confirmDeleteDataset = async (datasetNodeData) => {
   closeContextMenu();
   if (!datasetNodeData || !datasetNodeData.id) {
-    ElMessage.error("无法确定要删除的数据集。");
+    ElMessage.error(t('error.operationFailed'));
     return;
   }
   try {
     await ElMessageBox.confirm(
-      `确定要删除数据集 "${datasetNodeData.label}" 吗？此操作不可恢复！`,
-      '删除数据集确认',
-      { confirmButtonText: '确定删除', cancelButtonText: '取消', type: 'warning', customClass: 'dark-message-box' }
+      t('file.deleteDatasetConfirm', { name: datasetNodeData.label }),
+      t('file.deleteDatasetTitle'),
+      { 
+        confirmButtonText: t('file.confirmDelete'), 
+        cancelButtonText: t('file.cancelDelete'), 
+        type: 'warning', 
+        customClass: 'dark-message-box' 
+      }
     );
     await datasetStore.deleteDataset(datasetNodeData.id);
-    ElMessage.success(`数据集 "${datasetNodeData.label}" 已删除。`);
+    ElMessage.success(t('file.deleteSuccess', { name: datasetNodeData.label }));
     if (uiStore.selectedExplorerItem?.id === datasetNodeData.id) {
       uiStore.clearSelectedExplorerItem();
     }
   } catch (error) {
     if (error !== 'cancel' && error.message !== 'cancel' && error.name !== 'cancel') {
-      console.error('删除数据集失败:', error);
-      ElMessage.error(`删除失败: ${error.message || '未知错误'}`);
+      console.error('Delete dataset failed:', error);
+      ElMessage.error(t('file.deleteFailed', { error: error.message || t('error.operationFailed') }));
     }
   }
 };
@@ -545,14 +552,13 @@ const handleLocalFilesUploaded = async () => {
         uiStore.selectExplorerItem({ ...currentSelection });
       }
     } catch (error) {
-      console.error('刷新数据集详情失败:', error);
-      ElMessage.error(`文件已上传，但刷新数据集详情失败: ${error.message || '未知错误'}`);
-      // 尝试重新加载数据集列表
+      console.error('Failed to refresh dataset details:', error);
+      ElMessage.error(t('file.refreshFailed', { error: error.message || t('error.operationFailed') }));
       try {
         await datasetStore.fetchDatasets();
       } catch (retryError) {
-        console.error('重新加载数据集列表失败:', retryError);
-        ElMessage.error('数据集状态可能不一致，请刷新页面');
+        console.error('Failed to reload dataset list:', retryError);
+        ElMessage.error(t('file.datasetInconsistent'));
       }
     }
   }
@@ -664,14 +670,14 @@ const customLocalUploadRequest = async ({ file }) => {
             fileAbs: result.fileAbs, 
             name: file.name, 
             uid: file.uid, 
-            source: '本地',
+            source: t('file.local'),
             uniqueId: `local-${file.name}-${file.size}-${result.fileId || Date.now()}` 
         });
-        ElMessage.success(`本地文件 ${file.name} 处理成功。`);
+        ElMessage.success(t('file.fileProcessSuccess', { name: file.name }));
         localFileDisplayList.value = localFileDisplayList.value.filter(f => f.uid !== file.uid);
     } catch (error) {
         console.error('Error processing local file:', error);
-        ElMessage.error(`处理本地文件 ${file.name} 失败: ${error.message || '未知错误'}`);
+        ElMessage.error(t('file.fileProcessFailed', { name: file.name, error: error.message || t('error.operationFailed') }));
         localFileDisplayList.value = localFileDisplayList.value.filter(f => f.uid !== file.uid); 
     } finally {
         isProcessingLocalFiles.value = false; 
@@ -696,17 +702,17 @@ const handleLocalFolderInputChange = async (event) => {
                 fileId: result.fileId,
                 fileAbs: result.fileAbs, 
                 name: file.name, 
-                source: '本地 (文件夹)',
+                source: t('file.local'),
                 uniqueId: `local-folder-${file.webkitRelativePath || file.name}-${result.fileId || Date.now()}`
             });
             successCount++;
         } catch (error) {
             console.error(`Error processing folder file ${file.name}:`, error);
-            ElMessage.error(`处理文件夹内文件 ${file.name} 失败: ${error.message || '未知错误'}`);
+            ElMessage.error(t('file.fileProcessFailed', { name: file.name, error: error.message || t('error.operationFailed') }));
         }
     }
-    if (successCount > 0) ElMessage.success(`${successCount}个文件夹内文件已处理。`);
-    if (successCount !== filesToProcess.length) ElMessage.warning("部分文件夹内文件处理失败。");
+    if (successCount > 0) ElMessage.success(t('file.folderFilesProcessed', { count: successCount }));
+    if (successCount !== filesToProcess.length) ElMessage.warning(t('file.folderFilesPartialFailed'));
     
     if(localFolderInputRef.value) localFolderInputRef.value.value = ''; 
     isProcessingLocalFiles.value = false;
@@ -728,19 +734,19 @@ const handleUrlFetchAndAddToList = async () => {
                     fileId: result.fileId,
                     fileAbs: result.fileAbs, 
                     name: urlFetchForm.value.fileName, 
-                    source: 'URL',
+                    source: t('file.urlFetch'),
                     uniqueId: `url-${result.fileId || urlFetchForm.value.fileName}` 
                 });
-                ElMessage.success(`URL文件 ${urlFetchForm.value.fileName} 处理成功。`);
+                ElMessage.success(t('file.urlFileSuccess', { name: urlFetchForm.value.fileName }));
                 urlFetchFormRef.value.resetFields();
             } catch (error) {
                 console.error('Error fetching URL file:', error);
-                ElMessage.error(`抓取URL文件失败: ${error.message || '未知错误'}`);
+                ElMessage.error(t('file.urlFileFailed', { error: error.message || t('error.operationFailed') }));
             } finally {
                 isProcessingUrlFile.value = false;
             }
         } else {
-            ElMessage.error('请检查URL抓取表单输入。');
+            ElMessage.error(t('file.checkUrlForm'));
             return false;
         }
     });
@@ -830,111 +836,392 @@ onBeforeUnmount(() => {
   height: 100%;
   display: flex;
   flex-direction: column;
+  background-color: var(--el-bg-color);
+  color: var(--el-text-color-primary);
 }
-.explorer-panel { height: 100%; display: flex; flex-direction: column; background-color: #252526; color: #cccccc;}
-.collapse-title-text { flex-grow: 1; }
-.collapse-header-action-btn { margin-right: 10px; padding: 0 5px; }
-.collapse-header-action-btn .el-icon { margin-right: 4px; }
 
-.local-file-source-tab { padding: 10px; }
-.local-file-uploader :deep(.el-upload-dragger) { padding: 20px 10px; }
-.local-file-uploader :deep(.el-icon--upload) { font-size: 40px; margin-bottom: 10px; }
-.local-file-uploader :deep(.el-upload__text) { font-size: 13px; }
-.url-fetch-source-tab { padding: 15px; }
-.selected-files-panel-for-new-dataset { margin-top: 15px; padding: 10px; background-color: #2c2c2d; border-radius: 4px;}
-.selected-files-panel-for-new-dataset h4 { margin-top: 0; margin-bottom: 8px; font-size: 13px; color: #a0a0a0;}
-.selected-files-panel-for-new-dataset :deep(.el-table th) { background-color: #2c2c2d !important; color: #a0a0a0 !important; font-weight: normal;}
-.selected-files-panel-for-new-dataset :deep(.el-table td, .el-table th) { padding: 3px 0; font-size: 12px;}
-.selected-files-panel-for-new-dataset :deep(.el-button--small) { padding: 2px 5px;}
-.create-dataset-action-panel { padding: 0px 10px 10px 10px;}
-
-.explorer-panel :deep(.el-collapse-item__header) { 
-    background-color: #2c2c2d; 
-    color: #cccccc; 
-    border-bottom: 1px solid #333333; 
-    padding-left: 10px; 
-    font-size: 14px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
+.explorer-panel {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--el-bg-color);
+  color: var(--el-text-color-primary);
 }
-.explorer-panel :deep(.el-collapse-item__wrap) { background-color: #252526; border-bottom: none;}
-.explorer-panel :deep(.el-collapse-item__content) { padding: 0; color: #cccccc;}
-.explorer-panel :deep(.el-tabs__header) { margin-bottom: 0px; }
-.explorer-panel :deep(.el-tabs__nav-wrap) { padding: 0 10px; }
-.explorer-panel :deep(.el-tabs__nav-wrap::after) { background-color: #333333; height: 1px; }
-.explorer-panel :deep(.el-tabs__item) { color: #a0a0a0; font-size: 13px; padding: 0 10px; height: 35px; line-height: 35px; }
-.explorer-panel :deep(.el-tabs__item.is-active) { color: #ffffff; }
-.server-file-browser { font-size: 13px; padding: 8px 10px; }
-.path-selector { margin-bottom: 8px; }
-.path-selector :deep(.el-select) { width: 100%; }
-.path-navigation { margin-bottom: 8px; padding: 6px; background: #2c2c2d; border-radius: 3px; font-size: 12px; }
-.path-navigation :deep(.el-breadcrumb__item .el-breadcrumb__inner) { color: #b0b0b0 !important; cursor: pointer; }
-.path-navigation :deep(.el-breadcrumb__item .el-breadcrumb__inner:hover) { color: #79bbff !important; }
-.path-navigation :deep(.el-breadcrumb__separator) { color: #707070 !important; }
-.file-name { display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 13px; }
-.file-name span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.file-name:hover { color: #79bbff; }
-.dataset-loading-indicator, .dataset-error-message { padding: 10px; font-size: 13px; text-align: center; }
-.dataset-loading-indicator .progress-text { font-size: 12px; color: #a0a0a0; margin-top: 5px; }
-.dataset-error-message { color: #f56c6c; }
-.explorer-panel :deep(.dataset-tree) { background-color: transparent; color: #cccccc; font-size: 13px; padding: 5px 0; }
-.explorer-panel :deep(.dataset-tree .el-tree-node__content) { height: 28px; padding-right: 10px; background-color: transparent !important; }
-.explorer-panel :deep(.dataset-tree .el-tree-node__content:hover) { background-color: #303031 !important; }
-.explorer-panel :deep(.dataset-tree .el-tree-node:focus > .el-tree-node__content) { background-color: #353536 !important; }
-.explorer-panel :deep(.dataset-tree .el-tree-node.is-current > .el-tree-node__content) { background-color: #383839 !important; }
-.explorer-panel :deep(.dataset-tree .el-tree-node__label) { color: #cccccc; }
-.explorer-panel :deep(.dataset-tree .el-tree-node.is-current > .el-tree-node__content .el-tree-node__label) { color: #ffffff; }
-.explorer-panel :deep(.el-tree__empty-text) { color: #a0a0a0; font-size: 13px; text-align: center; padding: 10px; }
-.tree-node-custom { display: flex; align-items: center; justify-content: space-between; width: 100%; font-size: 13px; }
-.node-label { display: flex; align-items: center; overflow: hidden; }
-.node-text { margin-left: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.dataset-icon-wrapper .el-icon, .folder-icon-wrapper .el-icon, .file-icon-wrapper .el-icon { font-size: 14px; vertical-align: middle; }
-.file-icon-wrapper svg { width: 1em; height: 1em; font-size: 14px; }
-.dataset-icon-wrapper .el-icon { color: #ffd700; } 
-.folder-icon-wrapper .el-icon { color: #85c1e9; } 
-.node-actions { display: none; margin-left: 8px; }
-.explorer-panel :deep(.el-tree-node__content:hover .node-actions) { display: inline-block; }
-.delete-dataset-btn .el-icon { font-size: 14px; }
-.delete-dataset-btn:hover .el-icon { color: #f56c6c; }
-.file-meta-info { font-size: 11px; color: #888888; margin-left: 8px; white-space: nowrap; }
-.explorer-panel :deep(.el-table td), .explorer-panel :deep(.el-table th) { padding: 4px 0; }
-.explorer-panel :deep(.file-table-row) { background-color: #252526 !important; color: #cccccc; }
-.explorer-panel :deep(.file-table-row:hover > td) { background-color: #303031 !important; }
-.explorer-panel :deep(.el-table__empty-text) { color: #a0a0a0; }
-.explorer-panel :deep(.el-skeleton__item) { background-color: #3a3a3a; }
-.empty-state, .loading-state { margin-top: 10px; padding: 10px; }
-.explorer-panel :deep(.el-empty__description) { color: #a0a0a0; font-size: 13px; }
-.explorer-panel .el-icon { color: #c0c4cc; }
-.placeholder-tab-content { padding: 20px; text-align: center; color: #777; font-size: 13px; }
+
+.collapse-title-text {
+  flex-grow: 1;
+  color: var(--el-text-color-primary);
+}
+
+.collapse-header-action-btn {
+  margin-right: 10px;
+  padding: 0 5px;
+  color: var(--el-text-color-regular);
+}
+
+.collapse-header-action-btn .el-icon {
+  margin-right: 4px;
+}
+
+.local-file-source-tab {
+  padding: 10px;
+  background-color: var(--el-bg-color-overlay);
+}
+
+.local-file-uploader :deep(.el-upload-dragger) {
+  padding: 20px 10px;
+  background-color: var(--el-bg-color);
+  border: 1px dashed var(--el-border-color-light);
+}
+
+.local-file-uploader :deep(.el-icon--upload) {
+  font-size: 40px;
+  margin-bottom: 10px;
+  color: var(--el-text-color-regular);
+}
+
+.local-file-uploader :deep(.el-upload__text) {
+  font-size: 13px;
+  color: var(--el-text-color-regular);
+}
+
+.url-fetch-source-tab {
+  padding: 15px;
+  background-color: var(--el-bg-color-overlay);
+}
+
+.selected-files-panel-for-new-dataset {
+  margin-top: 15px;
+  padding: 10px;
+  background-color: var(--el-bg-color-overlay);
+  border-radius: 4px;
+}
+
+.selected-files-panel-for-new-dataset h4 {
+  margin-top: 0;
+  margin-bottom: 8px;
+  font-size: 13px;
+  color: var(--el-text-color-regular);
+}
+
+.selected-files-panel-for-new-dataset :deep(.el-table th) {
+  background-color: var(--el-bg-color-overlay) !important;
+  color: var(--el-text-color-regular) !important;
+  font-weight: normal;
+}
+
+.selected-files-panel-for-new-dataset :deep(.el-table td, .el-table th) {
+  padding: 3px 0;
+  font-size: 12px;
+  background-color: var(--el-bg-color);
+  color: var(--el-text-color-regular);
+}
+
+.selected-files-panel-for-new-dataset :deep(.el-button--small) {
+  padding: 2px 5px;
+}
+
+.create-dataset-action-panel {
+  padding: 0px 10px 10px 10px;
+}
+
+.explorer-panel :deep(.el-collapse-item__header) {
+  background-color: var(--el-bg-color-overlay);
+  color: var(--el-text-color-primary);
+  border-bottom: 1px solid var(--el-border-color-light);
+  padding-left: 10px;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.explorer-panel :deep(.el-collapse-item__wrap) {
+  background-color: var(--el-bg-color);
+  border-bottom: none;
+}
+
+.explorer-panel :deep(.el-collapse-item__content) {
+  padding: 0;
+  color: var(--el-text-color-regular);
+}
+
+.explorer-panel :deep(.el-tabs__header) {
+  margin-bottom: 0px;
+}
+
+.explorer-panel :deep(.el-tabs__nav-wrap) {
+  padding: 0 10px;
+}
+
+.explorer-panel :deep(.el-tabs__nav-wrap::after) {
+  background-color: var(--el-border-color-light);
+  height: 1px;
+}
+
+.explorer-panel :deep(.el-tabs__item) {
+  color: var(--el-text-color-regular);
+  font-size: 13px;
+  padding: 0 10px;
+  height: 35px;
+  line-height: 35px;
+}
+
+.explorer-panel :deep(.el-tabs__item.is-active) {
+  color: var(--el-text-color-primary);
+}
+
+.server-file-browser {
+  font-size: 13px;
+  padding: 8px 10px;
+  background-color: var(--el-bg-color-overlay);
+}
+
+.path-selector {
+  margin-bottom: 8px;
+}
+
+.path-selector :deep(.el-select) {
+  width: 100%;
+}
+
+.path-navigation {
+  margin-bottom: 8px;
+  padding: 6px;
+  background: var(--el-bg-color-overlay);
+  border-radius: 3px;
+  font-size: 12px;
+}
+
+.path-navigation :deep(.el-breadcrumb__item .el-breadcrumb__inner) {
+  color: var(--el-text-color-regular) !important;
+  cursor: pointer;
+}
+
+.path-navigation :deep(.el-breadcrumb__item .el-breadcrumb__inner:hover) {
+  color: var(--el-color-primary) !important;
+}
+
+.path-navigation :deep(.el-breadcrumb__separator) {
+  color: var(--el-text-color-regular) !important;
+}
+
+.file-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--el-text-color-regular);
+}
+
+.file-name span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.file-name:hover {
+  color: var(--el-color-primary);
+}
+
+.dataset-loading-indicator, .dataset-error-message {
+  padding: 10px;
+  font-size: 13px;
+  text-align: center;
+  color: var(--el-text-color-regular);
+}
+
+.dataset-loading-indicator .progress-text {
+  font-size: 12px;
+  color: var(--el-text-color-regular);
+  margin-top: 5px;
+}
+
+.dataset-error-message {
+  color: var(--el-color-danger);
+}
+
+.explorer-panel :deep(.dataset-tree) {
+  background-color: transparent;
+  color: var(--el-text-color-regular);
+  font-size: 13px;
+  padding: 5px 0;
+}
+
+.explorer-panel :deep(.dataset-tree .el-tree-node__content) {
+  height: 28px;
+  padding-right: 10px;
+  background-color: transparent !important;
+}
+
+.explorer-panel :deep(.dataset-tree .el-tree-node__content:hover) {
+  background-color: var(--el-fill-color-light) !important;
+}
+
+.explorer-panel :deep(.dataset-tree .el-tree-node:focus > .el-tree-node__content) {
+  background-color: var(--el-fill-color-light) !important;
+}
+
+.explorer-panel :deep(.dataset-tree .el-tree-node.is-current > .el-tree-node__content) {
+  background-color: var(--el-fill-color-light) !important;
+}
+
+.explorer-panel :deep(.dataset-tree .el-tree-node__label) {
+  color: var(--el-text-color-regular);
+}
+
+.explorer-panel :deep(.dataset-tree .el-tree-node.is-current > .el-tree-node__content .el-tree-node__label) {
+  color: var(--el-text-color-primary);
+}
+
+.explorer-panel :deep(.el-tree__empty-text) {
+  color: var(--el-text-color-regular);
+  font-size: 13px;
+  text-align: center;
+  padding: 10px;
+}
+
+.tree-node-custom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  font-size: 13px;
+}
+
+.node-label {
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+}
+
+.node-text {
+  margin-left: 5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dataset-icon-wrapper .el-icon, .folder-icon-wrapper .el-icon, .file-icon-wrapper .el-icon {
+  font-size: 14px;
+  vertical-align: middle;
+}
+
+.file-icon-wrapper svg {
+  width: 1em;
+  height: 1em;
+  font-size: 14px;
+}
+
+.dataset-icon-wrapper .el-icon {
+  color: var(--el-color-warning);
+}
+
+.folder-icon-wrapper .el-icon {
+  color: var(--el-color-primary);
+}
+
+.node-actions {
+  display: none;
+  margin-left: 8px;
+}
+
+.explorer-panel :deep(.el-tree-node__content:hover .node-actions) {
+  display: inline-block;
+}
+
+.delete-dataset-btn .el-icon {
+  font-size: 14px;
+}
+
+.delete-dataset-btn:hover .el-icon {
+  color: var(--el-color-danger);
+}
+
+.file-meta-info {
+  font-size: 11px;
+  color: var(--el-text-color-regular);
+  margin-left: 8px;
+  white-space: nowrap;
+}
+
+.explorer-panel :deep(.el-table td), .explorer-panel :deep(.el-table th) {
+  padding: 4px 0;
+  background-color: var(--el-bg-color);
+  color: var(--el-text-color-regular);
+}
+
+.explorer-panel :deep(.file-table-row) {
+  background-color: var(--el-bg-color) !important;
+  color: var(--el-text-color-regular);
+}
+
+.explorer-panel :deep(.file-table-row:hover > td) {
+  background-color: var(--el-fill-color-light) !important;
+}
+
+.explorer-panel :deep(.el-table__empty-text) {
+  color: var(--el-text-color-regular);
+}
+
+.explorer-panel :deep(.el-skeleton__item) {
+  background-color: var(--el-fill-color-light);
+}
+
+.empty-state, .loading-state {
+  margin-top: 10px;
+  padding: 10px;
+  color: var(--el-text-color-regular);
+}
+
+.explorer-panel :deep(.el-empty__description) {
+  color: var(--el-text-color-regular);
+  font-size: 13px;
+}
+
+.explorer-panel .el-icon {
+  color: var(--el-text-color-regular);
+}
+
+.placeholder-tab-content {
+  padding: 20px;
+  text-align: center;
+  color: var(--el-text-color-regular);
+  font-size: 13px;
+}
 
 .custom-context-menu {
   position: fixed;
-  background-color: #2c2c2d;
-  border: 1px solid #444444;
+  background-color: var(--el-bg-color-overlay);
+  border: 1px solid var(--el-border-color-light);
   border-radius: 4px;
   box-shadow: 0 2px 12px 0 rgba(0,0,0,0.3);
   padding: 5px 0;
-  z-index: 3000; 
-  color: #cccccc;
+  z-index: 3000;
+  color: var(--el-text-color-regular);
   font-size: 13px;
 }
+
 .custom-context-menu ul {
   list-style: none;
   padding: 0;
   margin: 0;
 }
+
 .custom-context-menu ul li {
   padding: 8px 15px;
   cursor: pointer;
-  display: flex; 
-  align-items: center; 
+  display: flex;
+  align-items: center;
 }
-.custom-context-menu ul li .el-icon { 
+
+.custom-context-menu ul li .el-icon {
   margin-right: 8px;
   font-size: 14px;
 }
+
 .custom-context-menu ul li:hover {
-  background-color: #383839;
+  background-color: var(--el-fill-color-light);
 }
 </style>

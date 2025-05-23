@@ -3,17 +3,17 @@
     <el-card class="box-card" :class="{ 'is-minimized': isMinimized }">
       <template #header>
         <div class="clearfix">
-          <span>上传任务 ({{ uploadStore.activeTasks.length }} 进行中)</span>
+          <span>{{ t('upload.tasks', { count: uploadStore.activeTasks.length }) }}</span>
           <div class="header-buttons">
             <el-button link @click="toggleMinimize" class="header-button">
               <el-icon><Minus v-if="!isMinimized" /><Plus v-if="isMinimized" /></el-icon>
             </el-button>
-             <el-tooltip content="清除所有已完成或失败的任务" placement="top">
+             <el-tooltip :content="t('upload.clearCompletedTip')" placement="top">
                 <el-button link @click="uploadStore.clearCompleted()" class="header-button" :disabled="uploadStore.completedTasks.length === 0">
                 <el-icon><CircleCloseFilled /></el-icon>
                 </el-button>
             </el-tooltip>
-            <el-tooltip content="关闭所有任务 (将取消进行中的任务)" placement="top">
+            <el-tooltip :content="t('upload.closeAllTip')" placement="top">
                  <el-button link type="danger" @click="confirmCloseAllTasks" class="header-button" :disabled="uploadStore.tasks.length === 0">
                     <el-icon><CloseBold /></el-icon>
                 </el-button>
@@ -23,7 +23,7 @@
       </template>
       <div v-show="!isMinimized" class="task-list">
         <div v-if="uploadStore.tasks.length === 0" class="no-tasks">
-          <p>暂无上传任务。</p>
+          <p>{{ t('upload.noTasks') }}</p>
         </div>
         <div v-for="task in uploadStore.allTasksSorted" :key="task.id" class="task-item" :class="`task-status-${task.status}`">
           <div class="task-info">
@@ -41,7 +41,7 @@
           
           <div v-if="task.type === 'folder' && task.subTasks && task.subTasks.length > 0" class="sub-tasks">
             <el-button link @click="toggleSubTaskVisibility(task.id)" size="small" class="toggle-subtasks-btn">
-              {{ visibleSubTasks[task.id] ? '隐藏子任务' : '显示子任务' }} ({{ task.subTasks.length }})
+              {{ visibleSubTasks[task.id] ? t('upload.hideSubtasks') : t('upload.showSubtasks') }} ({{ task.subTasks.length }})
             </el-button>
             <div v-if="visibleSubTasks[task.id]">
               <div v-for="subTask in task.subTasks" :key="subTask.id" class="sub-task-item">
@@ -59,7 +59,7 @@
               </div>
             </div>
           </div>
-          <el-button link @click="uploadStore.removeTask(task.id)" class="remove-task-btn" title="移除此任务">
+          <el-button link @click="uploadStore.removeTask(task.id)" class="remove-task-btn" :title="t('upload.removeTask')">
             <el-icon><Close /></el-icon>
           </el-button>
         </div>
@@ -73,7 +73,9 @@ import { ref, computed, reactive } from 'vue';
 import { useUploadStore } from '@/stores/uploadStore';
 import { ElCard, ElButton, ElProgress, ElIcon, ElTooltip, ElMessageBox } from 'element-plus';
 import { Folder, Document, Minus, Plus, Close, CircleCloseFilled, CloseBold, WarningFilled } from '@element-plus/icons-vue';
+import { useI18n } from 'vue-i18n';
 
+const { t } = useI18n();
 const uploadStore = useUploadStore();
 const isMinimized = ref(false);
 const visibleSubTasks = reactive({}); // Tracks visibility of sub-tasks for each folder task
@@ -88,11 +90,11 @@ const toggleSubTaskVisibility = (taskId) => {
 
 const getStatusText = (status) => {
   const map = {
-    pending: '等待中',
-    uploading: '上传中',
-    processing: '处理中',
-    completed: '已完成',
-    failed: '失败',
+    pending: t('upload.status.pending'),
+    uploading: t('upload.status.uploading'),
+    processing: t('upload.status.processing'),
+    completed: t('upload.status.completed'),
+    failed: t('upload.status.failed'),
   };
   return map[status] || status;
 };
@@ -105,16 +107,16 @@ const getProgressStatus = (status) => {
 
 const confirmCloseAllTasks = () => {
     ElMessageBox.confirm(
-        '确定要关闭所有上传任务吗？进行中的任务将被取消 (此操作目前仅从列表移除)。',
-        '确认关闭',
+        t('upload.closeAllConfirm'),
+        t('upload.closeAllTitle'),
         {
-            confirmButtonText: '确定',
-            cancelButtonText: '取消',
+            confirmButtonText: t('common.confirm'),
+            cancelButtonText: t('common.cancel'),
             type: 'warning',
         }
     ).then(() => {
         uploadStore.clearAllTasks(); // For now, this just clears the list. True cancellation is complex.
-        ElMessage.info('所有任务已关闭。');
+        ElMessage.info(t('upload.allTasksClosed'));
     }).catch(() => {
         // User cancelled
     });

@@ -1,28 +1,52 @@
 <template>
-  <div id="app-container" class="vscode-layout">
-    <div class="sidebar">
-      <ExplorerPanel />
+  <el-config-provider :locale="currentLocale">
+    <div class="app-container">
+      <div class="header">
+        <div class="logo">AI Studio Dataset</div>
+        <div class="header-right">
+          <ThemeSwitcher />
+          <LanguageSwitcher />
+        </div>
+      </div>
+      <div class="main-content">
+        <ExplorerPanel />
+        <MainContentDisplay />
+      </div>
+      <UploadProgressOverlay />
     </div>
-    <div class="main-content">
-      <MainContentDisplay />
-    </div>
-    <UploadProgressOverlay /> {/* Add the overlay component here */}
-  </div>
+  </el-config-provider>
 </template>
 
 <script setup>
-import { onMounted } from 'vue'; 
+import { onMounted, computed } from 'vue'; 
 import ExplorerPanel from './components/ExplorerPanel.vue';
 import MainContentDisplay from './components/MainContentDisplay.vue';
 import UploadProgressOverlay from './components/UploadProgressOverlay.vue'; // Import the overlay
 import { useDatasetStore } from './stores/datasetStore'; 
 import { useUploadStore } from './stores/uploadStore'; // Import upload store for potential initialization if needed
+import { useUIStore } from './stores/uiStore';
+import { useI18n } from 'vue-i18n'
+import { ElConfigProvider } from 'element-plus'
+import zhCn from 'element-plus/dist/locale/zh-cn.mjs'
+import en from 'element-plus/dist/locale/en.mjs'
+import LanguageSwitcher from './components/LanguageSwitcher.vue'
+import ThemeSwitcher from './components/ThemeSwitcher.vue'
 
 // Initialize stores
 const datasetStore = useDatasetStore();
 const uploadStore = useUploadStore(); // Initialize upload store
+const uiStore = useUIStore();
+
+const { locale } = useI18n()
+
+const currentLocale = computed(() => {
+  return locale.value === 'zh-CN' ? zhCn : en
+})
 
 onMounted(async () => {
+  // 初始化主题
+  uiStore.initTheme();
+  
   // Fetch initial global data
   // console.log('App.vue onMounted: Fetching initial constraints');
   await datasetStore.fetchDatasetConstraints();
@@ -78,5 +102,61 @@ html, body {
   box-sizing: border-box;
   text-align: left; /* Align text to the left for typical content */
   overflow-y: auto; /* Allow scrolling if content exceeds height */
+}
+
+.app-container {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--el-bg-color);
+  color: var(--el-text-color-primary);
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 20px;
+  height: 60px;
+  background-color: var(--el-bg-color);
+  border-bottom: 1px solid var(--el-border-color-light);
+}
+
+.logo {
+  font-size: 20px;
+  font-weight: bold;
+  color: var(--el-text-color-primary);
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.main-content {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  background-color: var(--el-bg-color);
+}
+
+/* 主题相关样式 */
+:root[data-theme="dark"] {
+  --el-bg-color: #1e1e1e;
+  --el-bg-color-overlay: #2c2c2d;
+  --el-text-color-primary: #e0e0e0;
+  --el-text-color-regular: #cccccc;
+  --el-border-color-light: #333333;
+  --el-fill-color-light: #2c2c2d;
+}
+
+:root[data-theme="light"] {
+  --el-bg-color: #ffffff;
+  --el-bg-color-overlay: #ffffff;
+  --el-text-color-primary: #303133;
+  --el-text-color-regular: #606266;
+  --el-border-color-light: #e4e7ed;
+  --el-fill-color-light: #f5f7fa;
 }
 </style>

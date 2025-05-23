@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     :model-value="visible"
-    :title="`向数据集添加服务器文件/文件夹: ${datasetName}`"
+    :title="t('file.addFilesToDataset', { name: datasetName })"
     width="60%"
     @update:model-value="$emit('update:visible', $event)"
     :close-on-click-modal="!isProcessingItems" 
@@ -11,21 +11,21 @@
   >
     <div v-if="isLoadingInitialData" class="loading-dataset-placeholder">
         <el-skeleton :rows="2" animated />
-        正在加载数据集信息...
+        {{ t('dataset.loadingDetails') }}
     </div>
     <div v-else-if="!targetDatasetDetails" class="dialog-error-placeholder">
-        无法加载目标数据集信息。
+        {{ t('error.loadDatasetFailed') }}
     </div>
     <div v-else>
       <p>
-        目标数据集: <strong>{{ targetDatasetDetails.label }}</strong>
-        <span v-if="basePathInDataset">, 目标路径: <strong>{{ basePathInDataset }}</strong></span>
+        {{ t('dataset.target') }}: <strong>{{ targetDatasetDetails.label }}</strong>
+        <span v-if="basePathInDataset">{{ t('file.targetPath') }}: <strong>{{ basePathInDataset }}</strong></span>
       </p>
       
-      <h4>选择服务器上的文件或文件夹</h4>
+      <h4>{{ t('file.selectServerFiles') }}</h4>
       <div class="server-file-browser-in-dialog">
         <div class="path-selector">
-          <el-select v-model="localSelectedBasePath" placeholder="选择基础路径" @change="handleLocalBasePathChange" size="small" :disabled="isProcessingItems">
+          <el-select v-model="localSelectedBasePath" :placeholder="t('file.selectBasePath')" @change="handleLocalBasePathChange" size="small" :disabled="isProcessingItems">
             <el-option
               v-for="pathItem in localBasePaths"
               :key="pathItem.value"
@@ -61,7 +61,7 @@
           :row-style="{ cursor: isProcessingItems ? 'not-allowed' : 'default' }"
         >
           <el-table-column type="selection" width="45" :selectable="isItemSelectable" :disabled="isProcessingItems" />
-          <el-table-column prop="name" label="名称">
+          <el-table-column prop="name" :label="t('file.name')">
             <template #default="{ row }">
               <div class="file-name-in-dialog" @click="!isProcessingItems && handleLocalItemClick(row)" :class="{ 'disabled-click': isProcessingItems }">
                 <el-icon v-if="row.type === '文件夹'"><Folder /></el-icon>
@@ -70,23 +70,23 @@
               </div>
             </template>
           </el-table-column>
-          <el-table-column prop="type" label="类型" width="80" />
-          <el-table-column prop="size" label="大小" width="100">
+          <el-table-column prop="type" :label="t('file.type')" width="80" />
+          <el-table-column prop="size" :label="t('file.size')" width="100">
             <template #default="{ row }">
               {{ row.type === '文件夹' ? '-' : formatFileSize(row.size) }}
             </template>
           </el-table-column>
         </el-table>
         <div v-if="!localLoadingFiles && localServerFiles.length === 0" class="empty-state-dialog">
-          <el-empty description="当前目录为空" :image-size="50" />
+          <el-empty :description="t('file.empty')" :image-size="50" />
         </div>
       </div>
 
       <div v-if="selectedServerItems.length > 0" class="selected-files-summary">
-        <h4>已选待添加项目 ({{ selectedServerItems.length }}):</h4>
+        <h4>{{ t('file.selectedFiles', { count: selectedServerItems.length }) }}:</h4>
         <ul>
           <li v-for="item in selectedServerItems" :key="item.path">
-            {{ item.name }} (类型: {{ item.type }}, 路径: {{ item.path }})
+            {{ item.name }} ({{ t('file.type') }}: {{ item.type }}, {{ t('file.path') }}: {{ item.path }})
           </li>
         </ul>
       </div>
@@ -94,14 +94,14 @@
     </div>
     <template #footer>
       <span class="dialog-footer">
-        <el-button @click="$emit('update:visible', false)" :disabled="isProcessingItems">取消</el-button>
+        <el-button @click="$emit('update:visible', false)" :disabled="isProcessingItems">{{ t('common.cancel') }}</el-button>
         <el-button 
           type="primary" 
           @click="handleAddSelectedItems" 
           :loading="isProcessingItems || isLoadingInitialData"
           :disabled="selectedServerItems.length === 0"
         >
-          {{ isProcessingItems ? `处理中... (${itemsProcessedCount}/${totalItemsToProcess})` : '添加已选项目' }}
+          {{ isProcessingItems ? t('file.processingFiles', { current: itemsProcessedCount, total: totalItemsToProcess }) : t('common.confirm') }}
         </el-button>
       </span>
     </template>
@@ -120,7 +120,9 @@ import { useDatasetStore } from '@/stores/datasetStore';
 import { useUploadStore } from '@/stores/uploadStore'; // Import upload store
 import { v4 as uuidv4 } from 'uuid'; // Import uuid
 import { getServerFiles as apiGetServerFiles, registerServerFile as apiRegisterServerFile } from '@/services/apiService';
+import { useI18n } from 'vue-i18n';
 
+const { t } = useI18n();
 const props = defineProps({
   visible: Boolean,
   datasetId: {
@@ -146,8 +148,8 @@ const localCurrentPath = ref('.');
 const localServerFiles = ref([]);
 const localLoadingFiles = ref(false);
 const localBasePaths = [ 
-  { label: '项目根目录', value: '.' },
-  { label: '上传目录', value: 'uploads' },
+  { label: t('file.rootDirectory'), value: '.' },
+  { label: t('file.uploadDirectory'), value: 'uploads' },
 ];
 const localSelectedBasePath = ref('.');
 const selectedServerItems = ref([]); 
@@ -286,7 +288,7 @@ watch(() => props.visible, (newVisible) => {
 
 const handleAddSelectedItems = async () => {
   if (!targetDatasetDetails.value || selectedServerItems.value.length === 0) {
-    ElMessage.info("没有选择项目或目标数据集无效。");
+    ElMessage.info(t('file.noItemsSelected'));
     return;
   }
   isProcessingItems.value = true;
@@ -297,14 +299,14 @@ const handleAddSelectedItems = async () => {
   let overallSuccess = true;
 
   const batchTaskId = uuidv4();
-  const taskName = `添加服务器项目到 ${props.datasetName || targetDatasetDetails.value.label}`;
+  const taskName = t('file.addingToDataset', { name: props.datasetName || targetDatasetDetails.value.label });
   const taskType = selectedServerItems.value.length > 1 || selectedServerItems.value.some(item => item.type === '文件夹') ? 'folder' : 'file';
   
   uploadStore.addTask({
     id: batchTaskId,
     name: taskName,
     type: taskType,
-    status: 'processing', // Server registration is more like processing
+    status: 'processing',
     progress: 0,
     itemCount: totalItemsToProcess.value,
   });
@@ -326,14 +328,12 @@ const handleAddSelectedItems = async () => {
           if (res.success && res.fileId) {
             allResults.push({ fileId: res.fileId, fileAbs: res.fileAbs, name: res.fileName });
           } else {
-            // ElMessage.error(`处理文件夹 "${item.name}" 内文件 "${res.fileName}" 失败: ${res.error || '未知错误'}`);
             overallSuccess = false;
           }
         });
       } else if (resultsFromServer.success && resultsFromServer.fileId) { 
         allResults.push({ fileId: resultsFromServer.fileId, fileAbs: resultsFromServer.fileAbs, name: resultsFromServer.fileName });
       } else {
-        // ElMessage.error(`处理项目 "${item.name}" 失败: ${resultsFromServer.error || '未知错误'}`);
         overallSuccess = false;
       }
       itemsProcessedCount.value++;
@@ -341,7 +341,7 @@ const handleAddSelectedItems = async () => {
     }
 
     if (allResults.length > 0) {
-      uploadStore.updateTaskStatus(batchTaskId, 'processing', 75); // Mark as further processing
+      uploadStore.updateTaskStatus(batchTaskId, 'processing', 75);
       const existingDatasetData = {
           datasetName: targetDatasetDetails.value.label,
           datasetAbs: targetDatasetDetails.value.description,
@@ -356,30 +356,25 @@ const handleAddSelectedItems = async () => {
           newFilesData: allResults, 
           existingDatasetData
       });
-      // ElMessage.success(`成功向数据集 "${props.datasetName || targetDatasetDetails.value.label}" 添加 ${allResults.length} 个文件条目。`);
-      // emit('items-added'); 
-      // emit('update:visible', false); // Dialog will be closed via overlay interaction or if preferred
     } else if (selectedServerItems.value.length > 0 && !overallSuccess) {
-        // ElMessage.warning("未能成功处理任何选定项目。"); // Store will show error
+        uploadStore.updateTaskStatus(batchTaskId, 'failed', 100, t('file.noItemsProcessed'));
     }
 
-    if (overallSuccess && allResults.length === selectedServerItems.value.reduce((acc,item) => acc + (item.type === '文件夹' ? ( (apiRegisterServerFile(payload)).length || 1) : 1) ,0) ) { // Approximation
+    if (overallSuccess && allResults.length === selectedServerItems.value.reduce((acc,item) => acc + (item.type === '文件夹' ? ( (apiRegisterServerFile(payload)).length || 1) : 1) ,0) ) {
         uploadStore.updateTaskStatus(batchTaskId, 'completed', 100);
-         ElMessage.success(`所有项目已成功添加到数据集 ${props.datasetName || targetDatasetDetails.value.label}。`);
-    } else if (allResults.length > 0) { // Partial success
-        const errorMsg = `部分项目添加失败。成功: ${allResults.length} 个文件条目。`;
-        uploadStore.updateTaskStatus(batchTaskId, 'failed', 100, errorMsg); // Mark as failed but 100% processed
+        ElMessage.success(t('file.allItemsAdded', { name: props.datasetName || targetDatasetDetails.value.label }));
+    } else if (allResults.length > 0) {
+        const errorMsg = t('file.partialSuccess', { count: allResults.length });
+        uploadStore.updateTaskStatus(batchTaskId, 'failed', 100, errorMsg);
         ElMessage.warning(errorMsg);
-    } else { // Complete failure or no files resulted
-        uploadStore.updateTaskStatus(batchTaskId, 'failed', itemsProcessedCount.value > 0 ? 100 : 0, "未能处理任何项目。");
-        ElMessage.error("未能处理任何项目。");
+    } else {
+        uploadStore.updateTaskStatus(batchTaskId, 'failed', itemsProcessedCount.value > 0 ? 100 : 0, t('file.noItemsProcessed'));
+        ElMessage.error(t('file.noItemsProcessed'));
     }
-
 
   } catch (error) {
-    console.error('添加项目到数据集失败:', error);
-    // ElMessage.error(`操作失败: ${error.message}`);
-    uploadStore.updateTaskStatus(batchTaskId, 'failed', uploadStore.tasks.find(t=>t.id===batchTaskId)?.progress || 50, error.message || "未知处理错误");
+    console.error(t('error.operationFailed'), error);
+    uploadStore.updateTaskStatus(batchTaskId, 'failed', uploadStore.tasks.find(t=>t.id===batchTaskId)?.progress || 50, error.message || t('error.unknown'));
   } finally {
     isProcessingItems.value = false;
      if (overallSuccess && allResults.length > 0) {

@@ -14,8 +14,8 @@
         <span class="node-text">{{ node.label }}</span>
       </span>
       <span class="node-actions">
-        <el-tooltip v-if="node.type === 'file'" content="从数据集中移除此文件" placement="top">
-          <el-button link type="danger" size="small" @click.stop="confirmRemoveFile" title="移除文件">
+        <el-tooltip v-if="node.type === 'file'" :content="t('dataset.node.removeFile')" placement="top">
+          <el-button link type="danger" size="small" @click.stop="confirmRemoveFile" :title="t('dataset.node.removeFile')">
             <el-icon><Delete /></el-icon>
           </el-button>
         </el-tooltip>
@@ -45,6 +45,9 @@ import { ElIcon, ElButton, ElTooltip, ElMessageBox } from 'element-plus';
 import { Folder, FolderOpened, Delete } from '@element-plus/icons-vue';
 import { getFileIconPath, getFileIconColor, formatFileSize } from '@/utils/fileDisplayUtils';
 import { useUIStore } from '@/stores/uiStore';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps({
   node: {
@@ -83,7 +86,17 @@ const handleNodeClick = () => {
 
 const confirmRemoveFile = () => {
   if (props.node.type !== 'file') return;
-  emit('remove-file', { fileNode: props.node, dataset: props.currentDatasetDetails });
+  ElMessageBox.confirm(
+    t('dataset.node.removeFileConfirm'),
+    t('dataset.node.removeFile'),
+    {
+      confirmButtonText: t('common.confirm'),
+      cancelButtonText: t('common.cancel'),
+      type: 'warning'
+    }
+  ).then(() => {
+    emit('remove-file', { fileNode: props.node, dataset: props.currentDatasetDetails });
+  }).catch(() => {});
 };
 
 // Expose utilities to template (alternative to importing them in <script setup> directly if preferred)
@@ -95,15 +108,10 @@ const confirmRemoveFile = () => {
 
 <style scoped>
 .dataset-node-display-item {
-  padding: 2px 0px 2px 10px; /* Indent nested items */
+  padding: 2px 0px 2px 10px;
   font-size: 14px;
   line-height: 24px;
-}
-.dataset-node-display-item.node-type-folder {
-  /* Styles specific to folder items if needed */
-}
-.dataset-node-display-item.node-type-file {
-  /* Styles specific to file items if needed */
+  color: var(--el-text-color-primary);
 }
 
 .node-content {
@@ -112,54 +120,69 @@ const confirmRemoveFile = () => {
   justify-content: space-between;
   padding: 4px 8px;
   border-radius: 4px;
-  cursor: default; /* Default cursor, individual elements can override */
+  cursor: default;
+  transition: background-color 0.3s;
 }
+
 .node-content:hover {
-  background-color: #383839; /* Similar to explorer panel hover */
+  background-color: var(--el-fill-color-light);
 }
 
 .node-label {
   display: flex;
   align-items: center;
   gap: 6px;
-  cursor: pointer; /* Make label clickable */
+  cursor: pointer;
   flex-grow: 1;
   overflow: hidden;
 }
+
 .node-text {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  color: var(--el-text-color-primary);
 }
-.folder-icon, .file-icon-wrapper {
+
+.folder-icon {
   font-size: 16px;
-  color: #85c1e9; /* Default folder color */
+  color: var(--el-color-primary);
 }
+
+.file-icon-wrapper {
+  font-size: 16px;
+  color: var(--el-text-color-regular);
+}
+
 .file-icon-wrapper svg {
   width: 1em;
   height: 1em;
-  font-size: 16px; /* Match icon size */
+  font-size: 16px;
 }
+
 .node-actions {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding-left: 10px; /* Space between label and actions */
+  padding-left: 10px;
 }
+
 .node-actions .el-button--small {
   padding: 2px 4px;
 }
+
 .node-actions .el-icon {
   font-size: 14px;
 }
+
 .file-size-info {
   font-size: 0.8em;
-  color: #888888;
+  color: var(--el-text-color-secondary);
   white-space: nowrap;
 }
 
 .node-children {
-  margin-left: 20px; /* Indent children further */
-  border-left: 1px dashed #444; /* Visual guide for hierarchy */
+  margin-left: 20px;
+  border-left: 1px dashed var(--el-border-color);
 }
 </style>
