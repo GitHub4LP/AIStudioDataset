@@ -1,23 +1,29 @@
 <template>
-  <div v-if="uploadStore.tasks.length > 0" class="upload-progress-overlay">
+  <div v-if="uiStore.isUploadProgressVisible" class="upload-progress-overlay">
     <el-card class="box-card" :class="{ 'is-minimized': isMinimized }">
       <template #header>
         <div class="clearfix">
           <span>{{ t('upload.tasks', { count: uploadStore.activeTasks.length }) }}</span>
           <div class="header-buttons">
-            <el-button link @click="toggleMinimize" class="header-button">
+            <el-button link @click="toggleMinimize" class="header-button" :title="isMinimized ? t('upload.maximize') : t('upload.minimize')">
               <el-icon><Minus v-if="!isMinimized" /><Plus v-if="isMinimized" /></el-icon>
             </el-button>
-             <el-tooltip :content="t('upload.clearCompletedTip')" placement="top">
-                <el-button link @click="uploadStore.clearCompleted()" class="header-button" :disabled="uploadStore.completedTasks.length === 0">
+            <el-tooltip :content="t('upload.clearCompletedTip')" placement="top">
+              <el-button link @click="uploadStore.clearCompleted()" class="header-button" :disabled="uploadStore.completedTasks.length === 0">
                 <el-icon><CircleCloseFilled /></el-icon>
-                </el-button>
+              </el-button>
             </el-tooltip>
-            <el-tooltip :content="t('upload.closeAllTip')" placement="top">
+            <el-tooltip :content="t('upload.closeOverlayTip')" placement="top">
+              <el-button link type="danger" @click="uiStore.setUploadProgressVisibility(false)" class="header-button">
+                <el-icon><CloseBold /></el-icon>
+              </el-button>
+            </el-tooltip>
+            <!-- Removed the original close all tasks button, replaced by close overlay -->
+            <!-- <el-tooltip :content="t('upload.closeAllTip')" placement="top">
                  <el-button link type="danger" @click="confirmCloseAllTasks" class="header-button" :disabled="uploadStore.tasks.length === 0">
                     <el-icon><CloseBold /></el-icon>
                 </el-button>
-            </el-tooltip>
+            </el-tooltip> -->
           </div>
         </div>
       </template>
@@ -83,12 +89,14 @@
 <script setup>
 import { ref, computed, reactive } from 'vue';
 import { useUploadStore } from '@/stores/uploadStore';
-import { ElCard, ElButton, ElProgress, ElIcon, ElTooltip, ElMessageBox } from 'element-plus';
+import { useUIStore } from '@/stores/uiStore'; // Import uiStore
+import { ElCard, ElButton, ElProgress, ElIcon, ElTooltip, ElMessageBox, ElMessage } from 'element-plus'; // Added ElMessage
 import { Folder, Document, Minus, Plus, Close, CircleCloseFilled, CloseBold, WarningFilled } from '@element-plus/icons-vue';
 import { useI18n } from 'vue-i18n';
 
 const { t } = useI18n();
 const uploadStore = useUploadStore();
+const uiStore = useUIStore(); // Initialize uiStore
 const isMinimized = ref(false);
 const visibleSubTasks = reactive({}); // Tracks visibility of sub-tasks for each folder task
 
@@ -117,6 +125,10 @@ const getProgressStatus = (status) => {
   return undefined; // Default progress bar color
 };
 
+// The confirmCloseAllTasks is not directly used in the template anymore,
+// but if it's intended to be kept for other purposes or future use, it's fine.
+// Otherwise, it could be removed if the "close overlay" button is the permanent replacement.
+// For now, I'll keep it as it might be part of "Verify Existing Functionality"
 const confirmCloseAllTasks = () => {
     ElMessageBox.confirm(
         t('upload.closeAllConfirm'),
@@ -127,7 +139,7 @@ const confirmCloseAllTasks = () => {
             type: 'warning',
         }
     ).then(() => {
-        uploadStore.clearAllTasks(); // For now, this just clears the list. True cancellation is complex.
+        uploadStore.clearAllTasks(); 
         ElMessage.info(t('upload.allTasksClosed'));
     }).catch(() => {
         // User cancelled
@@ -141,9 +153,19 @@ const confirmCloseAllTasks = () => {
   position: fixed;
   bottom: 20px;
   right: 20px;
-  width: 380px;
+  width: 380px; /* Default width */
+  max-width: 90vw; /* Ensure it doesn't overflow viewport horizontally */
   z-index: 2050; /* Ensure it's above most other elements, but less than ElMessage */
 }
+
+@media (max-width: 480px) { /* Adjust for smaller screens */
+  .upload-progress-overlay {
+    width: 95vw; /* Take up more width on small screens */
+    right: 2.5vw;
+    bottom: 10px;
+  }
+}
+
 .box-card {
   background-color: #2c2c2d;
   color: #e0e0e0;

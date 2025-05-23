@@ -60,6 +60,17 @@ export const useUIStore = defineStore('ui', () => {
     selectedExplorerItem.value = null;
   };
 
+  // Upload Progress Overlay visibility
+  const isUploadProgressVisible = ref(false); // Default to hidden
+
+  const toggleUploadProgressVisibility = () => {
+    isUploadProgressVisible.value = !isUploadProgressVisible.value;
+  };
+
+  const setUploadProgressVisibility = (isVisible) => {
+    isUploadProgressVisible.value = isVisible;
+  };
+
   return {
     themeMode,
     manualTheme,
@@ -70,6 +81,9 @@ export const useUIStore = defineStore('ui', () => {
     initTheme,
     selectedExplorerItem,
     selectExplorerItem,
-    clearSelectedExplorerItem
+    clearSelectedExplorerItem,
+    isUploadProgressVisible,
+    toggleUploadProgressVisibility,
+    setUploadProgressVisibility
   };
 });

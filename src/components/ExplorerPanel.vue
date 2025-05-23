@@ -454,28 +454,47 @@ const handleNodeDrop = async (draggingNode, dropNode, dropType, event) => {
 
   const targetNodeData = dropNode.data;
   if (!dropNode || !targetNodeData || targetNodeData.type === 'file') {
-    // Not a valid drop target (must be a dataset or folder)
-    // Or if dropType is 'inner' but target is a file, it's also invalid.
-    // If dropType is 'prev' or 'next', it means dropping between nodes, not into them.
-    // For this feature, we only care about 'inner' drops on datasets/folders.
     if (dropType !== 'inner') {
-        ElMessage.info(t('file.dropInstruction')); // New i18n key: "Please drop files directly onto a dataset or folder."
+        ElMessage.info(t('file.dropInstruction'));
         return;
     }
-    ElMessage.warning(t('file.dropTargetInvalid')); // New i18n key: "Files can only be dropped into datasets or folders."
+    ElMessage.warning(t('file.dropTargetInvalid'));
     return;
   }
 
+  // Set target for upload dialogs
   targetDatasetIdForUpload.value = String(targetNodeData.type === 'dataset' ? targetNodeData.id : targetNodeData.datasetId);
   const parentDataset = datasetStore.getDatasetById(targetDatasetIdForUpload.value);
   targetDatasetNameForUpload.value = parentDataset ? parentDataset.label : String(targetDatasetIdForUpload.value);
   targetBasePathInDataset.value = targetNodeData.type === 'folder' ? normalizePath(targetNodeData.path) : '';
+  
+  // --- Groundwork for Server File Drag-and-Drop ---
+  const isServerFileDrop = event.dataTransfer.types.includes('application/x-server-file-item');
+  if (isServerFileDrop) {
+    const serverItemDataString = event.dataTransfer.getData('application/x-server-file-item');
+    try {
+      const serverItem = JSON.parse(serverItemDataString);
+      // serverItem should be like { path: '/path/on/server/file.txt', name: 'file.txt', type: 'file' or 'folder' }
+      console.log('Server file drop detected (conceptual):', serverItem);
+      ElMessage.info(`Server Item Drop: ${serverItem.name}. Type: ${serverItem.type}. Path: ${serverItem.path}. (Feature in development)`);
+      
+      // Future: Instead of just logging, this would trigger a confirmation and then
+      // use apiService.uploadServerFileToDataset(...) or similar,
+      // passing targetDatasetIdForUpload, targetBasePathInDataset, serverItem.path, serverItem.name, etc.
+      // This would likely reuse or adapt parts of AddFilesDialog's logic for server files.
+    } catch (e) {
+      console.error("Error parsing server file drop data:", e);
+      ElMessage.error("Invalid server file drop data.");
+    }
+    return; // Stop further processing if it's a server file drop
+  }
+  // --- End Groundwork for Server File Drag-and-Drop ---
 
   const items = event.dataTransfer.items;
-  const filesToAdd = [];
+  const filesToAdd = []; // Only used for the fallback event.dataTransfer.files
   const filePromises = [];
 
-  if (items && items.length > 0) {
+  if (items && items.length > 0 && Array.from(items).some(item => item.kind === 'file')) {
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
       if (item.kind === 'file') {
@@ -484,10 +503,6 @@ const handleNodeDrop = async (draggingNode, dropNode, dropType, event) => {
           if (entry.isFile) {
             filePromises.push(new Promise((resolve, reject) => {
               entry.file(file => {
-                // Assign webkitRelativePath if it's missing (e.g. single file drop)
-                // For files dropped directly, webkitRelativePath is often empty.
-                // The UploadLocalFilesDialog handles relative paths for folder structures.
-                // Here, we ensure each file object has this property, even if empty.
                 if (!file.webkitRelativePath) {
                    Object.defineProperty(file, 'webkitRelativePath', { value: '', configurable: true, writable: true });
                 }
@@ -495,28 +510,23 @@ const handleNodeDrop = async (draggingNode, dropNode, dropType, event) => {
               }, reject);
             }));
           } else if (entry.isDirectory) {
-            // ElMessage.info(t('file.folderDropInfo', { folderName: entry.name }));
-            // For simplicity, we'll try to read the first level of files in a dropped directory.
-            // This is a common expectation for users.
             const dirReader = entry.createReader();
             filePromises.push(new Promise((resolveDirectory, rejectDirectory) => {
-              dirReader.readEntries(async (entries) => {
+              dirReader.readEntries(async (dirEntries) => {
                 const innerFilePromises = [];
-                for (const innerEntry of entries) {
+                for (const innerEntry of dirEntries) {
                   if (innerEntry.isFile) {
                     innerFilePromises.push(new Promise((resolveFile, rejectFile) => {
                       innerEntry.file(file => {
-                        // Construct webkitRelativePath for files from dropped folders
                         Object.defineProperty(file, 'webkitRelativePath', { value: `${entry.name}/${file.name}`, configurable: true, writable: true });
                         resolveFile(file);
                       }, rejectFile);
                     }));
                   }
-                  // Optionally, handle sub-sub-directories or inform user about limitations
                 }
                 try {
                     const filesFromDir = await Promise.all(innerFilePromises);
-                    resolveDirectory(filesFromDir); // Resolve with an array of files from this directory
+                    resolveDirectory(filesFromDir); 
                 } catch (error) {
                     rejectDirectory(error);
                 }
@@ -529,21 +539,17 @@ const handleNodeDrop = async (draggingNode, dropNode, dropType, event) => {
 
     Promise.all(filePromises.map(p => p.catch(e => {
         console.error("Error processing a dropped item:", e);
-        // Return a special marker for errors to filter out later or handle
         return { error: true, details: e };
     })))
     .then(results => {
-        // Flatten the array of arrays (if directories were processed) and filter out errors
         const allFiles = results.flat().filter(file => file && !file.error);
-
         if (allFiles.length > 0) {
             droppedFilesForDialog.value = allFiles;
             uploadLocalFilesDialogVisible.value = true;
         } else if (items.length > 0 && allFiles.length === 0) {
-            // This case means items were dropped, but none were processable files (e.g., only empty folders or errored items)
-            ElMessage.warning(t('file.noValidFilesDropped')); // New i18n: "No valid files were found in the dropped items."
-        } else if (!items.length) { // Should be caught by the initial items check, but as a fallback
-            ElMessage.warning(t('file.noFilesDropped'));
+            ElMessage.warning(t('file.noValidFilesDropped'));
+        } else { // No items of kind 'file' or other issue
+             ElMessage.warning(t('file.noFilesDropped'));
         }
     }).catch(err => {
         console.error('Error processing dropped files:', err);
@@ -551,14 +557,13 @@ const handleNodeDrop = async (draggingNode, dropNode, dropType, event) => {
     });
 
   } else if (event.dataTransfer.files && event.dataTransfer.files.length > 0) {
-    // Fallback for browsers that might not support `items.webkitGetAsEntry()` well,
-    // but provide files directly. This typically only works for files, not folders.
+    // Fallback for event.dataTransfer.files (less reliable for folders)
     for (let i = 0; i < event.dataTransfer.files.length; i++) {
         const file = event.dataTransfer.files[i];
-        // Ensure webkitRelativePath, though it will likely be empty for direct file drops
-        if (!file.webkitRelativePath) {
-            Object.defineProperty(file, 'webkitRelativePath', { value: file.name, configurable: true, writable: true });
-        }
+        // For this fallback, webkitRelativePath is usually not available or just the filename
+        // Best effort: use filename if webkitRelativePath is empty
+        const relativePath = file.webkitRelativePath || file.name; 
+        Object.defineProperty(file, 'webkitRelativePath', { value: relativePath, configurable: true, writable: true });
         filesToAdd.push(file);
     }
     if (filesToAdd.length > 0) {
@@ -568,6 +573,7 @@ const handleNodeDrop = async (draggingNode, dropNode, dropType, event) => {
          ElMessage.warning(t('file.noFilesDropped'));
     }
   } else {
+    // Neither items nor files found, or items found but none are 'file' kind.
     ElMessage.warning(t('file.noFilesDropped'));
   }
 };

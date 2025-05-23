@@ -286,6 +286,25 @@ export const useDatasetStore = defineStore('dataset', {
       } finally {
         this.isLoadingDatasets = false;
       }
+    },
+
+    async getBosUrl(datasetId, fileId) {
+      if (!datasetId || !fileId) {
+        console.error('getBosUrl: datasetId and fileId are required.');
+        throw new Error('Dataset ID and File ID are required.');
+      }
+      try {
+        // The apiService.getFileDownloadUrl already calls the correct backend endpoint
+        // that returns the BOS URL as plain text.
+        const url = await getFileDownloadUrl({ datasetId, fileId });
+        if (!url) {
+          throw new Error('Received empty URL from backend.');
+        }
+        return url;
+      } catch (error) {
+        console.error(`Failed to get BOS URL for dataset ${datasetId}, file ${fileId}:`, error);
+        throw error; // Re-throw for the component to handle
+      }
     }
   }
 });

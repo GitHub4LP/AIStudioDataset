@@ -4,6 +4,11 @@
       <div class="header">
         <div class="logo">AI Studio Dataset</div>
         <div class="header-right">
+          <el-tooltip :content="uiStore.isUploadProgressVisible ? t('upload.hideOverlayTip') : t('upload.showOverlayTip')" placement="bottom">
+            <el-button @click="uiStore.toggleUploadProgressVisibility()" circle class="header-icon-button">
+              <el-icon><Upload /></el-icon>
+            </el-button>
+          </el-tooltip>
           <ThemeSwitcher />
           <LanguageSwitcher />
         </div>
@@ -29,15 +34,17 @@ import { useI18n } from 'vue-i18n'
 import { ElConfigProvider } from 'element-plus'
 import zhCn from 'element-plus/dist/locale/zh-cn.mjs'
 import en from 'element-plus/dist/locale/en.mjs'
-import LanguageSwitcher from './components/LanguageSwitcher.vue'
-import ThemeSwitcher from './components/ThemeSwitcher.vue'
+import LanguageSwitcher from './components/LanguageSwitcher.vue';
+import ThemeSwitcher from './components/ThemeSwitcher.vue';
+import { Upload } from '@element-plus/icons-vue'; // Import the Upload icon
+import { ElTooltip, ElButton, ElIcon } from 'element-plus'; // Import ElTooltip, ElButton, ElIcon
 
 // Initialize stores
 const datasetStore = useDatasetStore();
 const uploadStore = useUploadStore(); // Initialize upload store
 const uiStore = useUIStore();
 
-const { locale } = useI18n()
+const { locale, t } = useI18n(); // Added t for tooltip internationalization
 
 const currentLocale = computed(() => {
   return locale.value === 'zh-CN' ? zhCn : en
@@ -132,6 +139,11 @@ html, body {
   display: flex;
   align-items: center;
   gap: 16px;
+}
+
+.header-icon-button {
+  font-size: 18px; /* Adjust icon size if necessary */
+  /* Ensure button itself is nicely styled if default circle is not enough */
 }
 
 .main-content {
