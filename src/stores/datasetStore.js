@@ -6,8 +6,10 @@ import {
     deleteDataset as apiDeleteDataset,
     getDatasetConstraints as apiGetDatasetConstraints,
     registerServerFile as apiRegisterServerFile, // For adding files
-    createDataset // <-- 确保导入
+    createDataset, // <-- 确保导入
+    removeFileFromDataset // <-- 确保导入
 } from '@/services/apiService'; // Assuming @ is configured for src
+import { buildFileTree } from '../utils/fileTreeHelper';
 
 const PAGE_SIZE = 20; // As used in ExplorerPanel
 const MAX_CONCURRENT_REQUESTS = 3; // As used in ExplorerPanel
@@ -95,7 +97,8 @@ export const useDatasetStore = defineStore('dataset', {
                             tags: detailData.result.tags || ds.tags || [],
                             fileIds: detailData.result.fileList?.map(f => f.fileId) || [],
                             fileAbsList: detailData.result.fileList?.map(f => f.fileAbs) || [],
-                            children: detailData.result.fileList, // Keep original fileList as children for tree
+                            flatFileList: detailData.result.fileList || [],
+                            children: buildFileTree(detailData.result.fileList || [], ds.datasetId),
                             ispublic: detailData.result.public !== undefined ? detailData.result.public : (ds.public !== undefined ? ds.public : 0),
 
                         };
@@ -132,7 +135,8 @@ export const useDatasetStore = defineStore('dataset', {
             tags: detailData.result.tags || listVersion.tags || [],
             fileIds: detailData.result.fileList?.map(f => f.fileId) || [],
             fileAbsList: detailData.result.fileList?.map(f => f.fileAbs) || [],
-            children: detailData.result.fileList,
+            flatFileList: detailData.result.fileList || [],
+            children: buildFileTree(detailData.result.fileList || [], datasetId),
             ispublic: detailData.result.public !== undefined ? detailData.result.public : (listVersion.public !== undefined ? listVersion.public : 0),
 
           };
@@ -219,49 +223,22 @@ export const useDatasetStore = defineStore('dataset', {
     },
     
     // Action for removing a file, used by MainContentDisplay
-    async removeFileFromDataset({ datasetId, fileIdToRemove, fileAbsToRemove }) {
+    async removeFileFromDataset({ datasetId, fileIdToRemove }) {
         this.isLoadingDetails = true;
         try {
             const dataset = this.detailedDatasets[datasetId];
             if (!dataset) throw new Error("Dataset details not found for removal.");
 
-            const newFileIds = dataset.fileIds.filter(id => id !== fileIdToRemove);
-            let newFileAbsList = [...dataset.fileAbsList];
+            // 调用新的RESTful API删除文件
+            await removeFileFromDataset(datasetId, fileIdToRemove);
             
-            let removedFileIndex = -1;
-            for(let i=0; i < dataset.fileIds.length; i++) {
-                if (dataset.fileIds[i] === fileIdToRemove && dataset.fileAbsList[i] === fileAbsToRemove) {
-                    removedFileIndex = i;
-                    break;
-                }
-            }
-            if (removedFileIndex === -1) { // Fallback if fileAbsToRemove was not exact match (e.g. due to label vs path diff)
-                 removedFileIndex = dataset.fileIds.indexOf(fileIdToRemove);
-            }
-
-            if (removedFileIndex !== -1) {
-                newFileAbsList.splice(removedFileIndex, 1);
-            } else {
-                 // Should ideally not happen if fileIdToRemove is from the dataset's actual files
-                throw new Error("File to remove not found in dataset's fileAbsList based on index from fileIds.");
-            }
-             if (newFileIds.length !== newFileAbsList.length) {
-                throw new Error("File list and path list length mismatch after removal prep.");
-            }
-
-            const payload = {
-                datasetName: dataset.label,
-                datasetAbs: dataset.description,
-                tags: dataset.tags,
-                ispublic: dataset.ispublic,
-                fileIds: newFileIds,
-                fileAbsList: newFileAbsList,
-            };
-            await apiUpdateDataset(datasetId, payload);
-            await this.fetchDatasetDetails(datasetId, true); // Force refresh
+            // 刷新数据集详情
+            await this.fetchDatasetDetails(datasetId, true);
+            
+            // 更新数据集列表中的对应项
             const index = this.datasets.findIndex(ds => ds.datasetId === datasetId);
             if (index !== -1) {
-                 this.datasets[index] = { ...this.datasets[index], ...this.detailedDatasets[datasetId] };
+                this.datasets[index] = { ...this.datasets[index], ...this.detailedDatasets[datasetId] };
             }
         } catch (error) {
             console.error(`Failed to remove file from dataset ${datasetId}:`, error);

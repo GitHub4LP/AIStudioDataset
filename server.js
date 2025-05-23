@@ -1,6 +1,6 @@
 import express from 'express'
 import { fileURLToPath } from 'url'
-import { dirname, join, normalize } from 'path'
+import { dirname, join, normalize, relative } from 'path'
 import { readdir, stat, readFile } from 'fs/promises'
 import { createServer as createViteServer } from 'vite'
 import { AI_Studio, validateDatasetParams } from './aistudio.js'
@@ -278,13 +278,6 @@ async function createServer() {
       }
 
       const { filePath, fileName, folderPath, currentPath, selectedBasePath } = req.body
-      console.log('收到上传请求:', {
-        filePath,
-        fileName,
-        folderPath,
-        currentPath,
-        selectedBasePath
-      })
 
       if (!filePath || !fileName) {
         throw new Error('缺少必要参数')
@@ -295,102 +288,137 @@ async function createServer() {
       // 如果是绝对路径（以 D:/ 或 D:\ 开头），直接使用
       if (filePath.startsWith('D:/') || filePath.startsWith('D:\\')) {
         fullPath = normalize(filePath)
-        console.log('使用绝对路径:', fullPath)
       } else {
-        // 否则使用 normalizeAndValidatePath 处理
-        console.log('处理相对路径:', {
-          filePath,
-          currentPath,
-          selectedBasePath
-        })
-
         // 构建完整路径
         let targetPath = filePath
         // 如果当前路径不是根目录，且文件路径不包含当前路径，则添加当前路径
         if (currentPath && currentPath !== '.' && !filePath.startsWith(currentPath)) {
           targetPath = `${currentPath}/${filePath}`
         }
-        console.log('构建的目标路径:', targetPath)
 
         const result = normalizeAndValidatePath(targetPath)
-        console.log('路径验证结果:', result)
-
         if (!result.isAllowed) {
           return res.status(403).json({ error: '访问被拒绝：路径超出允许范围' })
         }
         fullPath = result.fullPath
       }
 
-      console.log('最终使用的完整路径:', fullPath)
-
       // 检查文件是否存在
       try {
         await stat(fullPath)
       } catch (error) {
-        console.error('文件不存在:', error)
         return res.status(404).json({ error: `文件不存在: ${fullPath}` })
       }
 
       const stats = await stat(fullPath)
       const fileSize = stats.size
-      console.log('文件信息:', {
-        size: fileSize,
-        isFile: stats.isFile(),
-        isDirectory: stats.isDirectory()
-      })
 
-      // 获取 BOS 客户端
-      const { client, fileKey, bucketName } = await aiStudio.bosClient(false)
-      console.log('BOS客户端信息:', {
-        bucketName,
-        fileKey
-      })
+      if (stats.isDirectory()) {
+        // Helper function to recursively upload files in a directory
+        async function uploadDirectory(currentDir, baseDatasetPath) {
+          const results = []
+          const items = await readdir(currentDir)
 
-      // 上传文件到 BOS
-      const uploadTask = client.putSuperObject({
-        bucketName,
-        objectName: fileKey,
-        data: fullPath,
-        partConcurrency: 2,
-        onProgress: (options) => {
-          const { progress, speed } = options
-          console.log('上传进度:', {
-            progress,
-            speed,
-            fileName
-          })
+          for (const item of items) {
+            const itemPath = join(currentDir, item)
+            const itemStats = await stat(itemPath)
+            const relativePath = relative(fullPath, itemPath)
+            const fileAbs = baseDatasetPath ? join(baseDatasetPath, relativePath) : relativePath
+            const normalizedFileAbs = fileAbs.split('\\').join('/')
+
+            if (itemStats.isDirectory()) {
+              results.push(...await uploadDirectory(itemPath, baseDatasetPath))
+            } else {
+              const { client, fileKey, bucketName } = await aiStudio.bosClient(false)
+              const uploadTask = client.putSuperObject({
+                bucketName,
+                objectName: fileKey,
+                data: itemPath,
+                partConcurrency: 2
+              })
+              await uploadTask.start()
+              while (!uploadTask.isCompleted()) {
+                await new Promise(resolve => setTimeout(resolve, 100))
+              }
+
+              const addFileResp = await aiStudio.addFile(item, fileKey, false)
+              if (addFileResp && addFileResp.body && addFileResp.body.result && addFileResp.body.result.fileId) {
+                results.push({
+                  success: true,
+                  fileId: addFileResp.body.result.fileId,
+                  fileAbs: normalizedFileAbs,
+                  fileName: item
+                })
+                await new Promise(resolve => setTimeout(resolve, 500))
+              } else {
+                console.error(`添加到数据集失败: ${item}`, addFileResp.body?.error_msg || '未知错误')
+                results.push({
+                  success: false,
+                  fileName: item,
+                  fileAbs: normalizedFileAbs,
+                  error: `添加到数据集失败: ${addFileResp.body?.error_msg || '未知错误'}`
+                })
+              }
+            }
+          }
+          return results
         }
-      })
 
-      // 启动上传
-      const tasks = uploadTask.start()
-      console.log('切分任务:', tasks)
+        // Start directory upload
+        const uploadResults = await uploadDirectory(fullPath, folderPath)
+        const validResults = uploadResults.filter(r => r)
+        const allSuccessful = validResults.every(r => r.success)
+        
+        if (validResults.length === 0) {
+          return res.status(404).json({ success: false, error: '目录中没有可上传的文件' })
+        }
 
-      // 等待上传完成
-      while (!uploadTask.isCompleted()) {
-        await new Promise(resolve => setTimeout(resolve, 100))
+        res.json({
+          success: allSuccessful,
+          message: allSuccessful ? '文件夹上传成功' : '文件夹部分上传成功',
+          results: validResults
+        })
+
+      } else {
+        const { client, fileKey, bucketName } = await aiStudio.bosClient(false)
+
+        // 上传文件到 BOS
+        const uploadTask = client.putSuperObject({
+          bucketName,
+          objectName: fileKey,
+          data: fullPath,
+          partConcurrency: 2
+        })
+
+        // 启动上传
+        await uploadTask.start()
+
+        // 等待上传完成
+        while (!uploadTask.isCompleted()) {
+          await new Promise(resolve => setTimeout(resolve, 100))
+        }
+
+        // 添加到数据集
+        const addFileResp = await aiStudio.addFile(fileName, fileKey, false)
+        if (!addFileResp || !addFileResp.body || !addFileResp.body.result || !addFileResp.body.result.fileId) {
+          throw new Error('添加到数据集失败: 响应格式错误')
+        }
+        const fileId = addFileResp.body.result.fileId
+
+        // 等待一段时间确保文件处理完成
+        await new Promise(resolve => setTimeout(resolve, 2000))
+
+        res.json({
+          success: true,
+          fileId,
+          fileAbs: folderPath ? `${folderPath}/${fileName}` : fileName
+        })
       }
-
-      // 添加到数据集
-      const addFileResp = await aiStudio.addFile(fileName, fileKey, false)
-      if (!addFileResp || !addFileResp.body || !addFileResp.body.result || !addFileResp.body.result.fileId) {
-        throw new Error('添加到数据集失败: 响应格式错误')
-      }
-      const fileId = addFileResp.body.result.fileId
-
-      // 等待一段时间确保文件处理完成
-      await new Promise(resolve => setTimeout(resolve, 2000))
-
-      res.json({
-        success: true,
-        fileId,
-        fileAbs: folderPath ? `${folderPath}/${fileName}` : fileName
-      })
     } catch (error) {
-      logError('上传到数据集失败', error)
+      console.error('上传到数据集失败:', error.message)
       res.status(500).json({ 
         success: false, 
-        error: error.message || '上传到数据集失败' 
+        error: error.message || '上传到数据集失败'
       })
     }
   })
@@ -419,23 +447,26 @@ async function createServer() {
       }
 
       // 验证参数
-      const validationErrors = validateDatasetParams({
-        fileName: originalname,
-        datasetName,
-        datasetAbs,
-        tags,
-        fileIds: [1], // 假设只有一个文件
-        fileSize
-      })
-
-      if (validationErrors.length > 0) {
-        // 清理临时文件
+      // Note: validateDatasetParams might need adjustment if it's too strict for local uploads
+      // where fileId might not be immediately known or relevant before actual upload.
+      // For now, assuming it's adaptable or focusing on the server-side upload logic.
+      try {
+        validateDatasetParams({
+          fileName: decodedFileName, // Use decoded name for validation
+          datasetName,
+          datasetAbs,
+          tags,
+          fileIds: [1], // Placeholder, as file isn't in AI Studio yet
+          fileSize
+        })
+      } catch (error) {
         fs.unlinkSync(tempPath)
         return res.status(400).json({
           success: false,
-          error: validationErrors.join('; ')
+          error: error.message
         })
       }
+
 
       // 获取 BOS 客户端
       const { client, fileKey, bucketName } = await aiStudio.bosClient(false)
@@ -465,12 +496,18 @@ async function createServer() {
       fs.unlinkSync(tempPath)
 
       // 添加到数据集
-      const addFileResp = await aiStudio.addFile(originalname, fileKey, false)
+      const addFileResp = await aiStudio.addFile(decodedFileName, fileKey, false) // Use decoded name
+      if (!addFileResp || !addFileResp.body || !addFileResp.body.result || !addFileResp.body.result.fileId) {
+        throw new Error(`添加到数据集失败: ${addFileResp.body?.error_msg || '响应格式错误'}`)
+      }
       const fileId = addFileResp.body.result.fileId
 
       res.json({
         success: true,
-        fileId
+        fileId,
+        // For local uploads, fileAbs is typically just the filename unless other context is provided.
+        // This matches the existing behavior implicitly.
+        fileAbs: decodedFileName 
       })
     } catch (error) {
       logError('上传到数据集失败', error)
@@ -519,13 +556,19 @@ async function createServer() {
 
       // 验证参数
       try {
-        validateDatasetParams({ datasetName, datasetAbs, tags, fileIds })
+        // Ensure fileAbsList elements also meet constraints if they are new files.
+        // This part might need more robust validation depending on how fileAbsList is used.
+        validateDatasetParams({ datasetName, datasetAbs, tags, fileIds, fileAbsList: fileAbsList || [] })
       } catch (error) {
         return res.status(400).json({
           success: false,
           error: error.message
         })
       }
+      
+      // Ensure fileAbsList has forward slashes, as this is often a point of error if not standardized
+      const normalizedFileAbsList = (fileAbsList || []).map(fab => fab.split('\\').join('/'));
+
 
       // 创建数据集
       const createResp = await aiStudio.create(
@@ -534,7 +577,7 @@ async function createServer() {
         datasetAbs || '',  // 数据集内容
         tags || [],  // 标签
         fileIds,  // 文件ID列表
-        fileAbsList || [],  // 文件描述列表，包含文件的完整相对路径
+        normalizedFileAbsList,  // 文件描述列表，包含文件的完整相对路径
         0  // 是否公开
       )
 
@@ -849,6 +892,80 @@ async function createServer() {
       })
     }
   })
+
+  // 删除数据集中的文件
+  app.delete('/api/datasets/:datasetId/files/:fileId', async (req, res) => {
+    try {
+      if (!aiStudio) {
+        await initAIStudio()
+      }
+
+      const { datasetId, fileId } = req.params;
+      if (!datasetId || !fileId) {
+        return res.status(400).json({ success: false, error: '数据集ID和文件ID都是必需的' });
+      }
+
+      // 获取数据集详情
+      const datasetDetail = await aiStudio.fetchDetail(datasetId);
+      if (!datasetDetail || !datasetDetail.body || !datasetDetail.body.result) {
+        console.error('数据集详情获取失败:', {
+          hasDetail: !!datasetDetail,
+          hasBody: !!(datasetDetail && datasetDetail.body),
+          hasResult: !!(datasetDetail && datasetDetail.body && datasetDetail.body.result)
+        });
+        return res.status(404).json({ success: false, error: '数据集不存在' });
+      }
+
+      const dataset = datasetDetail.body.result;
+      const fileList = dataset.fileList || [];
+      
+      // 找到要删除的文件
+      const fileIndex = fileList.findIndex(f => f.fileId === parseInt(fileId));
+      if (fileIndex === -1) {
+        return res.status(404).json({ success: false, error: '文件不存在于数据集中' });
+      }
+
+      // 从fileList中移除文件
+      fileList.splice(fileIndex, 1);
+
+      // 准备更新数据集的数据
+      const updateData = {
+        datasetId,
+        datasetName: dataset.datasetName,
+        datasetAbs: dataset.datasetAbs || dataset.datasetName || '数据集描述',
+        datasetContent: dataset.datasetContent || dataset.datasetAbs || dataset.datasetName || '数据集内容',
+        tags: dataset.tags || [],
+        fileIds: fileList.map(f => f.fileId),
+        fileAbsList: fileList.map(f => f.fileAbs),
+        ispublic: dataset.public
+      };
+
+      // 调用saveEdit更新数据集
+      const result = await aiStudio.saveEdit(
+        updateData.datasetId,
+        updateData.datasetName,
+        updateData.datasetAbs,
+        updateData.datasetContent,
+        updateData.tags,
+        updateData.fileIds,
+        updateData.fileAbsList,
+        updateData.ispublic
+      );
+
+      if (!result || !result.body || result.body.error_code) {
+        console.error('更新数据集失败:', {
+          errorCode: result?.body?.error_code,
+          errorMsg: result?.body?.error_msg
+        });
+        throw new Error(result?.body?.error_msg || '更新数据集失败');
+      }
+
+      res.json({ success: true, message: '文件已成功从数据集中移除' });
+    } catch (error) {
+      console.error('删除文件失败:', error.message);
+      res.status(500).json({ success: false, error: error.message || '删除文件时发生错误' });
+    }
+  });
 
   // 处理所有其他请求
   app.use('*', async (req, res, next) => {

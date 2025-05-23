@@ -39,7 +39,7 @@
       <!-- Dataset Details -->
       <div v-if="selectedItem.type === 'dataset' && currentDatasetDetails" class="dataset-details">
         <el-descriptions :column="1" border size="small">
-          <el-descriptions-item label="ID">{{ currentDatasetDetails.id }}</el-descriptions-item>
+          <el-descriptions-item label="Dataset ID">{{ currentDatasetDetails.id }}</el-descriptions-item>
           <el-descriptions-item label="名称">{{ currentDatasetDetails.label }}</el-descriptions-item>
           <el-descriptions-item label="描述">{{ currentDatasetDetails.description || '无' }}</el-descriptions-item>
           <el-descriptions-item label="标签">
@@ -49,40 +49,31 @@
             <span v-else>无</span>
           </el-descriptions-item>
         </el-descriptions>
-        <h4 v-if="currentDatasetDetails.children && currentDatasetDetails.children.length > 0">包含的文件/文件夹:</h4>
-        <ul v-if="currentDatasetDetails.children && currentDatasetDetails.children.length > 0" class="item-children-list">
-          <li v-for="child in currentDatasetDetails.children" :key="child.id" class="child-item">
-            <div class="child-info">
-              <el-icon v-if="child.type === 'folder' || !child.isFileNode"><Folder /></el-icon>
-              <el-icon v-else-if="child.type === 'file' || child.isFileNode"><Document /></el-icon>
-              <span class="child-label">{{ child.label || child.fileName }}</span>
-              <span class="child-type">({{ child.type || (child.isFileNode ? 'file' : 'folder') }})</span>
-            </div>
-            <el-button
-              v-if="child.type === 'file' || child.isFileNode"
-              link
-              type="danger"
-              size="small"
-              @click="confirmRemoveFileFromDataset(child)"
-              title="从数据集中移除此文件"
-              class="remove-file-button"
-            >
-              <el-icon><Delete /></el-icon>
-            </el-button>
-          </li>
-        </ul>
-         <p v-else>此数据集为空。</p>
+        <h4 v-if="currentDatasetDetails.children && currentDatasetDetails.children.length > 0" class="section-title">包含的文件/文件夹:</h4>
+        <div v-if="currentDatasetDetails.children && currentDatasetDetails.children.length > 0" class="item-children-container">
+          <DatasetNodeDisplay
+            v-for="childNode in currentDatasetDetails.children"
+            :key="childNode.id"
+            :node="childNode"
+            :dataset-id="currentDatasetDetails.id"
+            :current-dataset-details="currentDatasetDetails"
+            @remove-file="handleRemoveFileEvent"
+            @file-click="handleFileNodeClick"
+            @folder-click="handleFolderNodeClick"
+          />
+        </div>
+         <p v-else class="empty-message">此数据集为空。</p>
       </div>
 
       <!-- File Details (from dataset) -->
       <div v-if="selectedItem.type === 'file'" class="file-details">
         <el-descriptions :column="1" border size="small">
-          <el-descriptions-item label="ID">{{ selectedItem.id }}</el-descriptions-item>
+          <el-descriptions-item label="File ID">{{ selectedItem.id }}</el-descriptions-item>
           <el-descriptions-item label="名称">{{ selectedItem.label }}</el-descriptions-item>
           <el-descriptions-item label="所属数据集 ID">{{ selectedItem.datasetId }}</el-descriptions-item>
-          <el-descriptions-item label="路径">{{ selectedItem.path }}</el-descriptions-item>
-          <el-descriptions-item label="类型">{{ selectedItem.file?.fileContentType || '未知' }}</el-descriptions-item>
-          <el-descriptions-item label="大小">{{ formatFileSize(selectedItem.file?.fileSize) }}</el-descriptions-item>
+          <el-descriptions-item label="路径 (FileAbs)">{{ selectedItem.path }}</el-descriptions-item>
+          <el-descriptions-item label="类型">{{ selectedItem.fileContentType || selectedItem.file?.fileContentType || '未知' }}</el-descriptions-item>
+          <el-descriptions-item label="大小">{{ formatFileSize(selectedItem.fileSize ?? selectedItem.file?.fileSize) }}</el-descriptions-item>
         </el-descriptions>
         <el-button type="primary" size="small" style="margin-top: 15px;" @click="handleDownloadFile">下载</el-button>
       </div>
@@ -90,20 +81,25 @@
       <!-- Folder Details (from dataset) -->
       <div v-if="selectedItem.type === 'folder'" class="folder-details">
         <el-descriptions :column="1" border size="small">
-          <el-descriptions-item label="ID">{{ selectedItem.id }}</el-descriptions-item>
+          <el-descriptions-item label="Node ID">{{ selectedItem.id }}</el-descriptions-item> {/* This is the generated ID for the tree */}
           <el-descriptions-item label="名称">{{ selectedItem.label }}</el-descriptions-item>
           <el-descriptions-item label="所属数据集 ID">{{ selectedItem.datasetId }}</el-descriptions-item>
           <el-descriptions-item label="路径">{{ selectedItem.path }}</el-descriptions-item>
         </el-descriptions>
-         <h4 v-if="selectedItem.children && selectedItem.children.length > 0">包含的文件/文件夹:</h4>
-        <ul v-if="selectedItem.children && selectedItem.children.length > 0" class="item-children-list">
-           <li v-for="child in selectedItem.children" :key="child.id" class="child-item">
-             <el-icon v-if="child.type === 'folder' || !child.isFileNode"><Folder /></el-icon>
-             <el-icon v-else-if="child.type === 'file' || child.isFileNode"><Document /></el-icon>
-             {{ child.label || child.fileName }} ({{ child.type || (child.isFileNode ? 'file' : 'folder') }})
-          </li>
-        </ul>
-        <p v-else>此文件夹为空。</p>
+        <h4 v-if="selectedItem.children && selectedItem.children.length > 0" class="section-title">包含的文件/文件夹:</h4>
+        <div v-if="selectedItem.children && selectedItem.children.length > 0" class="item-children-container">
+          <DatasetNodeDisplay
+            v-for="childNode in selectedItem.children"
+            :key="childNode.id"
+            :node="childNode"
+            :dataset-id="selectedItem.datasetId" 
+            :current-dataset-details="datasetStore.detailedDatasets[selectedItem.datasetId]"
+            @remove-file="handleRemoveFileEvent"
+            @file-click="handleFileNodeClick"
+            @folder-click="handleFolderNodeClick"
+          />
+        </div>
+        <p v-else class="empty-message">此文件夹为空。</p>
       </div>
       
       <!-- Server File Details -->
@@ -113,7 +109,6 @@
           <el-descriptions-item label="完整路径">{{ selectedItem.path }}</el-descriptions-item>
           <el-descriptions-item label="大小">{{ formatFileSize(selectedItem.size) }}</el-descriptions-item>
         </el-descriptions>
-         <!-- Add actions for server files if any, e.g., add to new dataset -->
       </div>
 
     </el-card>
@@ -132,7 +127,7 @@
       :visible="addFilesDialogVisible"
       :dataset-id="addFilesDialogDatasetId" 
       @update:visible="addFilesDialogVisible = $event"
-      @files-added="handleDialogFilesAdded"
+      @files-added="handleDialogFilesAdded" 
     />
   </div>
 </template>
@@ -143,42 +138,42 @@ import { ElCard, ElDescriptions, ElDescriptionsItem, ElTag, ElButton, ElEmpty, E
 import { Folder, Document, Edit, Delete, Plus } from '@element-plus/icons-vue';
 import EditDatasetDialog from './EditDatasetDialog.vue';
 import AddFilesDialog from './AddFilesDialog.vue';
+import DatasetNodeDisplay from './DatasetNodeDisplay.vue'; 
 import { useUIStore } from '@/stores/uiStore';
 import { useDatasetStore } from '@/stores/datasetStore';
 import * as apiService from '@/services/apiService';
+// Assuming formatFileSize might be moved to utils, but if it's local:
+// import { formatFileSize } from '@/utils/fileDisplayUtils'; // Or keep local if not moved
 
 const uiStore = useUIStore();
 const datasetStore = useDatasetStore();
 
-// The selected item from the UI store
 const selectedItem = computed(() => uiStore.selectedExplorerItem);
 
-// For dialogs, we only need the ID to pass to them.
-// The dialogs themselves will fetch/use the store for full data.
 const editDatasetDialogVisible = ref(false);
 const editDialogDatasetId = ref(null);
 
-const addFilesDialogVisible = ref(false);
+const addFilesDialogVisible = ref(false); // For the original "Add Files" button if it uses AddFilesDialog
 const addFilesDialogDatasetId = ref(null);
 
 
-// When selectedItem is a dataset, this computed property provides its full details from datasetStore
 const currentDatasetDetails = computed(() => {
     if (selectedItem.value && selectedItem.value.type === 'dataset' && selectedItem.value.id) {
-        // Ensure detailedDatasets[id] structure matches what the template expects
-        // (id, label, description, tags, children with file details)
         return datasetStore.detailedDatasets[selectedItem.value.id];
     }
     return null;
 });
 
-// Watch for changes in selectedItem to fetch details if it's a dataset
-// and its details are not yet fully loaded in detailedDatasets
 watch(selectedItem, async (newItem) => {
     if (newItem && newItem.type === 'dataset' && newItem.id) {
-        if (!datasetStore.detailedDatasets[newItem.id] || !datasetStore.detailedDatasets[newItem.id].children) {
-            // console.log(`MainContentDisplay: Selected dataset ${newItem.id} details not found or incomplete, fetching...`);
-            await datasetStore.fetchDatasetDetails(newItem.id, true); // Force fetch if not fully loaded
+        const detail = datasetStore.detailedDatasets[newItem.id];
+        if (!detail || !detail.children || !detail.flatFileList) {
+            await datasetStore.fetchDatasetDetails(newItem.id, true); 
+        }
+    } else if (newItem && newItem.type === 'folder' && newItem.datasetId) {
+        const parentDatasetDetail = datasetStore.detailedDatasets[newItem.datasetId];
+        if (!parentDatasetDetail || !parentDatasetDetail.children || !parentDatasetDetail.flatFileList) {
+            await datasetStore.fetchDatasetDetails(newItem.datasetId, true);
         }
     }
 }, { immediate: true });
@@ -191,94 +186,126 @@ const openEditDatasetDialog = () => {
   }
 };
 
+// This function is for the original "Add Files" button on a dataset
 const openAddFilesToDatasetDialog = () => {
   if (selectedItem.value && selectedItem.value.type === 'dataset') {
     addFilesDialogDatasetId.value = selectedItem.value.id;
-    addFilesDialogVisible.value = true;
+    // We might need to pass the dataset name and base path if AddFilesDialog expects them
+    // For now, assuming AddFilesDialog fetches name with datasetId
+    addFilesDialogVisible.value = true; 
   }
 };
 
 const handleDialogDatasetUpdated = () => {
-  // Data is already refreshed by the store action.
-  // If the currently selected item was the one updated, its view will react.
-  // If selectedItem's own properties (like name/label) changed, need to ensure uiStore.selectedExplorerItem is also updated
-  // or ExplorerPanel updates its node data which then propagates to uiStore.
-  // For now, assume datasetStore updates are sufficient for reactivity.
-  // We might need to re-select the item in uiStore if its label changed.
   if(editDialogDatasetId.value && datasetStore.detailedDatasets[editDialogDatasetId.value]) {
       const updatedDatasetNodeData = datasetStore.detailedDatasets[editDialogDatasetId.value];
-       uiStore.selectExplorerItem({ // Re-select with potentially updated label/data
-        id: updatedDatasetNodeData.id,
-        label: updatedDatasetNodeData.label,
-        type: 'dataset',
-        description: updatedDatasetNodeData.description,
-        tags: updatedDatasetNodeData.tags,
-        children: updatedDatasetNodeData.children, // Pass children for display
-        // Pass other fields needed by selectedItem if any
-        fileIds: updatedDatasetNodeData.fileIds,
-        fileAbsList: updatedDatasetNodeData.fileAbsList,
-        ispublic: updatedDatasetNodeData.ispublic,
+       uiStore.selectExplorerItem({ 
+        ...updatedDatasetNodeData 
       });
   }
 };
 
+// This handles the @files-added event from the original AddFilesDialog (if used by the button)
 const handleDialogFilesAdded = () => {
-  // Dataset details in store are updated by the dialog's action.
-  // The `currentDatasetDetails` computed property will update automatically.
-  // No specific action needed here other than ensuring dialog closes.
+  if (addFilesDialogDatasetId.value && datasetStore.detailedDatasets[addFilesDialogDatasetId.value]) {
+    uiStore.selectExplorerItem({ ...datasetStore.detailedDatasets[addFilesDialogDatasetId.value] });
+  }
 };
 
-const formatFileSize = (size) => {
-  if (size === undefined || size === null) return '未知大小';
+const formatFileSize = (size) => { // Keep local or import from utils
+  if (size === undefined || size === null || Number.isNaN(size)) return '未知大小';
   if (size === 0) return '0 B';
   const k = 1024;
   const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-  const i = Math.floor(Math.log(size) / Math.log(k));
+  const i = Math.floor(Math.log(Math.abs(size)) / Math.log(k)); // Use Math.abs for safety
+  if (i < 0 || i >= sizes.length) return `${size} B`;
   return parseFloat((size / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 };
 
-const confirmRemoveFileFromDataset = async (fileToRemove) => {
-  if (!currentDatasetDetails.value || !fileToRemove) {
+const confirmRemoveFileFromDataset = async (eventData) => {
+  if (!eventData || !eventData.fileNode || !eventData.dataset) {
     ElMessage.error("无法确定要移除的文件或所属数据集。");
     return;
   }
-  const datasetId = currentDatasetDetails.value.id;
-  // fileToRemove is a child node from dataset's children. It should have 'id' (fileId) and 'path' or 'label'.
-  // The file object itself is expected under fileToRemove.file by the store action.
-  const fileId = fileToRemove.id || fileToRemove.file?.fileId;
-  const fileAbs = fileToRemove.path || fileToRemove.file?.fileAbs || fileToRemove.label;
+
+  const { fileNode, dataset } = eventData;
+  const datasetId = dataset.id;
+  const fileId = fileNode.id;
 
   if (!fileId) {
     ElMessage.error("文件ID未知，无法移除。");
     return;
   }
+  if (!datasetId) {
+    ElMessage.error("所属数据集ID未知，无法移除。");
+    return;
+  }
+  
+  const datasetLabel = dataset.label || datasetId;
+  const fileLabel = fileNode.label || fileId;
 
   try {
     await ElMessageBox.confirm(
-      `确定要从数据集 "${currentDatasetDetails.value.label}" 中移除文件 "${fileToRemove.label || fileId}" 吗？`,
+      `确定要从数据集 "${datasetLabel}" 中移除文件 "${fileLabel}" 吗？`,
       '移除文件确认',
       { confirmButtonText: '确定移除', cancelButtonText: '取消', type: 'warning', customClass: 'dark-message-box' }
     );
     
-    await datasetStore.removeFileFromDataset({ datasetId, fileIdToRemove: fileId, fileAbsToRemove: fileAbs });
-    ElMessage.success(`文件 "${fileToRemove.label || fileId}" 已成功从数据集中移除。`);
-    // The datasetStore.detailedDatasets[datasetId] will be updated, and currentDatasetDetails will react.
-    // uiStore.selectedExplorerItem might need updating if its 'children' list is stale.
-    // Re-selecting the dataset in uiStore to ensure its children list is fresh in the main view.
-    uiStore.selectExplorerItem({ ...datasetStore.detailedDatasets[datasetId] });
-
+    await datasetStore.removeFileFromDataset({ datasetId, fileIdToRemove: fileId });
+    ElMessage.success(`文件 "${fileLabel}" 已成功从数据集中移除。`);
+    
+    const currentSelectedItem = uiStore.selectedExplorerItem;
+    if (currentSelectedItem && currentSelectedItem.id === datasetId && currentSelectedItem.type === 'dataset') {
+        uiStore.selectExplorerItem({ ...datasetStore.detailedDatasets[datasetId] });
+    
+        await datasetStore.fetchDatasetDetails(datasetId, true); 
+        const updatedParentDataset = datasetStore.detailedDatasets[datasetId];
+        let updatedFolderNode = null;
+        function findNodeById(nodes, id) {
+            if (!nodes) return null;
+            for (const node of nodes) {
+                if (node.id === id) return node;
+                if (node.children) {
+                    const found = findNodeById(node.children, id);
+                    if (found) return found;
+                }
+            }
+            return null;
+        }
+        if (updatedParentDataset && updatedParentDataset.children) {
+            updatedFolderNode = findNodeById(updatedParentDataset.children, currentSelectedItem.id);
+        }
+        if (updatedFolderNode) {
+             uiStore.selectExplorerItem({ ...updatedFolderNode, datasetId: datasetId });
+        } else {
+            uiStore.selectExplorerItem({ ...updatedParentDataset });
+        }
+    }
+    else if (currentSelectedItem && currentSelectedItem.id === fileId && currentSelectedItem.type === 'file') {
+        uiStore.selectExplorerItem({ ...datasetStore.detailedDatasets[datasetId] });
+    }
 
   } catch (error) {
     if (error !== 'cancel' && error.message !== 'cancel' && error.name !== 'cancel') { 
       console.error('移除文件失败:', error);
-      ElMessage.error(`移除文件失败: ${error.message}`);
+      ElMessage.error(`移除文件失败: ${error.message || '未知错误'}`);
     }
   }
 };
 
-// 下载链接缓存
-const downloadUrlCache = ref({});
+const handleRemoveFileEvent = (eventData) => {
+  confirmRemoveFileFromDataset(eventData);
+};
 
+const handleFileNodeClick = (fileNodeWithContext) => {
+  // uiStore.selectExplorerItem is already called by DatasetNodeDisplay
+};
+
+const handleFolderNodeClick = (folderNodeWithContext) => {
+  // uiStore.selectExplorerItem is already called by DatasetNodeDisplay
+};
+
+const downloadUrlCache = ref({});
 const handleDownloadFile = async () => {
   if (!selectedItem.value || !selectedItem.value.datasetId || !selectedItem.value.id) {
     ElMessage.error('无法获取文件信息');
@@ -296,11 +323,10 @@ const handleDownloadFile = async () => {
       if (!url) throw new Error('未获取到下载链接');
       downloadUrlCache.value[cacheKey] = url;
     } catch (e) {
-      ElMessage.error('获取下载链接失败: ' + (e.message || e));
+      ElMessage.error('获取下载链接失败: ' + (e.message || '未知错误'));
       return;
     }
   }
-  // 创建a标签下载，noreferrer
   const a = document.createElement('a');
   a.href = url;
   a.download = selectedItem.value.label || '';
@@ -330,20 +356,16 @@ const handleDownloadFile = async () => {
 .dark-theme :deep(.el-descriptions__content) { color: #d4d4d4; background-color: #252526; }
 .dark-theme :deep(.el-descriptions__table), .dark-theme :deep(.el-descriptions__row) { border-color: #333333 !important; }
 .dark-theme :deep(.el-descriptions--small .el-descriptions__label), .dark-theme :deep(.el-descriptions--small .el-descriptions__content) { padding: 6px 10px; }
-.dataset-details h4, .folder-details h4 { margin-top: 20px; margin-bottom: 10px; font-size: 14px; color: #c0c0c0; }
-.item-children-list { list-style-type: none; padding-left: 5px; font-size: 13px; }
-.child-item { padding: 4px 0; color: #b0b0b0; display: flex; align-items: center; justify-content: space-between; }
-.child-info { display: flex; align-items: center; }
-.child-info .el-icon { margin-right: 6px; font-size: 14px; }
-.child-label { margin-right: 5px; }
-.child-type { font-size: 0.9em; color: #888; }
-.remove-file-button { margin-left: 10px; color: #F56C6C; padding: 2px 4px; }
-.remove-file-button .el-icon { font-size: 14px; }
-.remove-file-button:hover { color: #f89898; background-color: rgba(245, 108, 108, 0.1); }
+
+.section-title { margin-top: 20px; margin-bottom: 10px; font-size: 14px; color: #c0c0c0; font-weight: 500; }
+.item-children-container { 
+  /* Optional: Add padding or border if desired for the container */
+}
+.empty-message { font-size: 13px; color: #777777; margin-top: 10px; padding-left: 10px; }
+
+
 .detail-tag { margin-right: 5px; margin-bottom: 5px; background-color: #3a3a3a; border-color: #4a4a4a; color: #b0b0b0; }
 .empty-state-custom { height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; }
 .dark-theme :deep(.el-empty__description p) { color: #777777; }
-.dark-message-box .el-message-box__title { /* color: #e0e0e0; */ }
-.dark-message-box .el-message-box__content { /* color: #c0c0c0; */ }
 .server-file-details { margin-top:10px; }
 </style>

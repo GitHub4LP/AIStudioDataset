@@ -6,23 +6,30 @@
     <div class="main-content">
       <MainContentDisplay />
     </div>
+    <UploadProgressOverlay /> {/* Add the overlay component here */}
   </div>
 </template>
 
 <script setup>
-import { onMounted } from 'vue'; // Import onMounted
+import { onMounted } from 'vue'; 
 import ExplorerPanel from './components/ExplorerPanel.vue';
 import MainContentDisplay from './components/MainContentDisplay.vue';
-import { useDatasetStore } from './stores/datasetStore'; // Import dataset store
+import UploadProgressOverlay from './components/UploadProgressOverlay.vue'; // Import the overlay
+import { useDatasetStore } from './stores/datasetStore'; 
+import { useUploadStore } from './stores/uploadStore'; // Import upload store for potential initialization if needed
 
 // Initialize stores
 const datasetStore = useDatasetStore();
+const uploadStore = useUploadStore(); // Initialize upload store
 
 onMounted(async () => {
   // Fetch initial global data
   // console.log('App.vue onMounted: Fetching initial constraints');
   await datasetStore.fetchDatasetConstraints();
   // Initial dataset load will be triggered by ExplorerPanel itself now
+
+  // Example: Add a dummy task to test the overlay (remove in production)
+  // uploadStore.addTask({ name: 'Initial Test Task.jpg', type: 'file' });
 });
 </script>
 
