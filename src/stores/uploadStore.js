@@ -10,10 +10,15 @@ export const useUploadStore = defineStore('upload', {
     //   name: 'MyImage.jpg',
     //   type: 'file', // 'file' or 'folder'
     //   status: 'pending', // 'pending', 'uploading', 'processing', 'completed', 'failed'
-    //   progress: 0, // 0-100. For Phase 1, can be 0 or 100.
+    //   progress: 0, // 0-100.
     //   error: null, // Error message string
     //   subTasks: [], // For folder uploads, array of similar task objects
-    //   createdAt: Date.now() // For sorting or timeout logic
+    //   createdAt: Date.now(), // For sorting or timeout logic
+    //   targetDatasetId: 'dataset-uuid-456',
+    //   targetDatasetName: 'My Research Data',
+    //   uploadType: 'local-file', // 'local-file', 'local-folder', 'server-file', 'server-folder', 'url-fetch'
+    //   fileId: null, // Populated after successful upload & registration
+    //   fileAbs: null // Populated after successful upload & registration
     // }
   }),
 
@@ -28,49 +33,61 @@ export const useUploadStore = defineStore('upload', {
       const newTask = {
         id: taskDetails.id || uuidv4(),
         name: taskDetails.name,
-        type: taskDetails.type || 'file',
+        type: taskDetails.type || 'file', // 'file' or 'folder' - item structure
+        uploadType: taskDetails.uploadType || 'local-file', // Specific origin/method
         status: 'pending',
         progress: 0,
         error: null,
-        subTasks: taskDetails.subTasks || [], // Initialize if provided
+        subTasks: taskDetails.subTasks || [],
         createdAt: Date.now(),
+        targetDatasetId: taskDetails.targetDatasetId || null,
+        targetDatasetName: taskDetails.targetDatasetName || null,
+        fileId: null, // Initialize as null
+        fileAbs: null, // Initialize as null
         // Any other details passed in
-        ...taskDetails, 
+        ...taskDetails,
       };
       this.tasks.push(newTask);
-      return newTask.id; // Return the ID of the new task
+      return newTask.id;
     },
 
-    updateTaskStatus(taskId, status, progress, error = null) {
+    updateTaskStatus(taskId, status, progress, error = null, fileDetails = {}) {
       const task = this.tasks.find(t => t.id === taskId);
       if (task) {
         if (status !== undefined) task.status = status;
         if (progress !== undefined) task.progress = progress;
-        if (error !== undefined) task.error = error; // Allow setting error to null explicitly
+        if (error !== undefined) task.error = error;
 
-        // If a folder task is marked completed, ensure all its subtasks are also completed.
-        // Or, if it failed, mark subtasks appropriately if they are still pending/uploading.
-        if (task.type === 'folder') {
-            if (status === 'completed') {
-                task.subTasks.forEach(st => {
-                    if (st.status !== 'failed') st.status = 'completed'; st.progress = 100;
-                });
-            } else if (status === 'failed') {
-                 task.subTasks.forEach(st => {
-                    if (st.status === 'pending' || st.status === 'uploading' || st.status === 'processing') {
-                        st.status = 'failed';
-                        st.error = st.error || "Parent task failed";
-                    }
-                });
-            }
+        if (status === 'completed') {
+          if (fileDetails.fileId !== undefined) task.fileId = fileDetails.fileId;
+          if (fileDetails.fileAbs !== undefined) task.fileAbs = fileDetails.fileAbs;
         }
 
+        // Folder task status propagation
+        if (task.type === 'folder') {
+          if (status === 'completed') {
+            task.subTasks.forEach(st => {
+              if (st.status !== 'failed') {
+                st.status = 'completed';
+                st.progress = 100;
+                // fileId and fileAbs for subtasks should be set via updateSubTaskStatus
+              }
+            });
+          } else if (status === 'failed') {
+            task.subTasks.forEach(st => {
+              if (['pending', 'uploading', 'processing'].includes(st.status)) {
+                st.status = 'failed';
+                st.error = st.error || "Parent task failed";
+              }
+            });
+          }
+        }
       } else {
         console.warn(`Task with ID ${taskId} not found for update.`);
       }
     },
-    
-    // For more granular control if needed, especially for folder uploads
+
+    // For more granular control if needed
     startUploadingTask(taskId, totalSize = 0) {
         const task = this.tasks.find(t => t.id === taskId);
         if (task) {
@@ -114,7 +131,7 @@ export const useUploadStore = defineStore('upload', {
       }
     },
 
-    updateSubTaskStatus(parentTaskId, subTaskId, status, progress, error = null) {
+    updateSubTaskStatus(parentTaskId, subTaskId, status, progress, error = null, fileDetails = {}) {
       const parentTask = this.tasks.find(t => t.id === parentTaskId);
       if (parentTask && parentTask.subTasks) {
         const subTask = parentTask.subTasks.find(st => st.id === subTaskId);
@@ -123,8 +140,12 @@ export const useUploadStore = defineStore('upload', {
           if (progress !== undefined) subTask.progress = progress;
           if (error !== undefined) subTask.error = error;
 
+          if (status === 'completed') {
+            if (fileDetails.fileId !== undefined) subTask.fileId = fileDetails.fileId;
+            if (fileDetails.fileAbs !== undefined) subTask.fileAbs = fileDetails.fileAbs;
+          }
+
           // Update parent folder task's progress based on subtasks
-          // This is a simple average; more sophisticated logic might be needed (e.g., weighted by size)
           let completedSubTasks = 0;
           let totalProgress = 0;
           parentTask.subTasks.forEach(st => {

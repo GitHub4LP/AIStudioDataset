@@ -66,18 +66,30 @@
 
 <script setup>
 import { ref, computed } from 'vue';
-import { ElMessage } from 'element-plus';
+import { ElMessage, ElDialog, ElForm, ElFormItem, ElInput, ElButton, ElSkeleton } from 'element-plus';
 import { useI18n } from 'vue-i18n';
 import { useDatasetStore } from '@/stores/datasetStore';
+import { useUploadStore } from '@/stores/uploadStore'; // Import upload store
+import * as apiService from '@/services/apiService'; // Import apiService
+import { v4 as uuidv4 } from 'uuid'; // Import uuid
 
 const { t } = useI18n();
 const datasetStore = useDatasetStore();
+const uploadStore = useUploadStore(); // Initialize upload store
 
 const props = defineProps({
   visible: Boolean,
   datasetId: {
     type: [String, Number],
     required: true
+  },
+  datasetName: { // Added datasetName prop
+    type: String,
+    default: ''
+  },
+  basePathInDataset: { // Added basePathInDataset prop (though less relevant for URL, good for consistency)
+    type: String,
+    default: ''
   }
 });
 
@@ -129,26 +141,70 @@ const resetForm = () => {
 const handleSubmit = async () => {
   if (!formRef.value) return;
   
-  try {
-    await formRef.value.validate();
-    isSubmitting.value = true;
+  await formRef.value.validate(); // Validation will throw if it fails
+  isSubmitting.value = true;
+  isLoading.value = true; // Also set isLoading for overall dialog state
 
-    const result = await datasetStore.addUrlFile({
-      datasetId: props.datasetId,
+  const taskId = uuidv4();
+  uploadStore.addTask({
+    id: taskId,
+    name: form.value.name,
+    type: 'file', // URL fetch results in a single file
+    uploadType: 'url-fetch',
+    targetDatasetId: props.datasetId,
+    targetDatasetName: props.datasetName || String(props.datasetId),
+    status: 'uploading', // Indicate fetching has started
+    progress: 0, // Indeterminate for URL fetch initially
+  });
+
+  try {
+    const payload = {
       url: form.value.url,
-      name: form.value.name,
+      fileName: form.value.name,
       referer: form.value.referer,
-      userAgent: form.value.userAgent
+      userAgent: form.value.userAgent,
+      datasetId: props.datasetId,
+      // basePathInDataset might be relevant if API supports placing URL files in specific paths
+      // For now, assuming it's added to dataset root or API handles pathing if basePathInDataset is part of payload
+    };
+    if (props.basePathInDataset) {
+        payload.basePath = props.basePathInDataset;
+    }
+
+    const result = await apiService.fetchUrlToDataset(payload);
+
+    // After successful API call, update the task in uploadStore
+    uploadStore.updateTaskStatus(taskId, 'completed', 100, null, { 
+      fileId: result.fileId, 
+      fileAbs: result.fileAbs || form.value.name // Use form.name as fallback for fileAbs
+    });
+    
+    // Add file to dataset in datasetStore (this might be redundant if fetchUrlToDataset already does it,
+    // but good for explicit state management if fetchUrlToDataset only handles backend registration)
+    // Assuming addUrlFile in datasetStore is still the primary way to update dataset's frontend state.
+    // The `result` from `fetchUrlToDataset` should contain necessary info.
+     await datasetStore.addUrlFile({
+        datasetId: props.datasetId,
+        fileId: result.fileId,
+        fileAbs: result.fileAbs,
+        name: form.value.name, // from form
+        size: result.size || 0, // from result if available
+        // other potential fields like type, etc.
     });
 
-    ElMessage.success(t('file.addSuccess'));
-    emit('file-added', result);
+
+    ElMessage.success(t('file.urlFileSuccess', { name: form.value.name }));
+    emit('file-added', { fileId: result.fileId, fileAbs: result.fileAbs || form.value.name, name: form.value.name });
     handleCancel();
+
   } catch (error) {
-    if (error === 'cancel') return;
-    ElMessage.error(t('file.addFailed'));
+    console.error('Error fetching URL file:', error);
+    uploadStore.updateTaskStatus(taskId, 'failed', 0, error.message || t('file.urlFileFailed', { error: 'Unknown' }));
+    ElMessage.error(t('file.urlFileFailed', { error: error.message || t('error.operationFailed') }));
+    // Do not automatically cancel the dialog on error, let user see the error in upload overlay
   } finally {
     isSubmitting.value = false;
+    isLoading.value = false;
   }
 };
 </script>

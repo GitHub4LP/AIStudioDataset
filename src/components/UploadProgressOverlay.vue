@@ -34,7 +34,18 @@
             </span>
             <span class="task-status">{{ getStatusText(task.status) }}</span>
           </div>
-          <el-progress :percentage="task.progress" :status="getProgressStatus(task.status)" :stroke-width="10" class="task-progress-bar" />
+          <div class="task-details">
+            <div>{{ t('upload.target') }}: {{ task.targetDatasetName || task.targetDatasetId || t('common.unknown') }}</div>
+            <div v-if="task.status === 'completed' && task.fileId" class="task-file-id">File ID: {{ task.fileId }}</div>
+          </div>
+          <el-progress 
+            :percentage="task.progress" 
+            :status="getProgressStatus(task.status)" 
+            :stroke-width="10" 
+            :indeterminate="task.uploadType === 'url-fetch' && (task.status === 'uploading' || task.status === 'processing')"
+            :show-text="!(task.uploadType === 'url-fetch' && (task.status === 'uploading' || task.status === 'processing'))"
+            class="task-progress-bar" 
+          />
           <div v-if="task.error" class="task-error">
             <el-icon><WarningFilled /></el-icon> {{ task.error }}
           </div>
@@ -52,6 +63,7 @@
                   </span>
                   <span class="task-status subtask-status">{{ getStatusText(subTask.status) }}</span>
                 </div>
+                <div v-if="subTask.status === 'completed' && subTask.fileId" class="task-file-id subtask-file-id">File ID: {{ subTask.fileId }}</div>
                 <el-progress :percentage="subTask.progress" :status="getProgressStatus(subTask.status)" :stroke-width="6" class="task-progress-bar" />
                  <div v-if="subTask.error" class="task-error subtask-error">
                     <el-icon><WarningFilled /></el-icon> {{ subTask.error }}
@@ -189,6 +201,21 @@ const confirmCloseAllTasks = () => {
   align-items: center;
   margin-bottom: 5px;
   font-size: 13px;
+}
+.task-details {
+  font-size: 0.8em;
+  color: #b0b0b0;
+  margin-bottom: 4px;
+}
+.task-file-id {
+  font-size: 0.9em; /* Slightly smaller than main details */
+  color: #a0a0a0;
+  margin-top: 2px;
+}
+.subtask-file-id {
+  font-size: 0.85em;
+  margin-left: 20px; /* Align with subtask name indent */
+  margin-bottom: 2px;
 }
 .task-name {
   display: flex;
