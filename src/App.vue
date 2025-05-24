@@ -1,50 +1,65 @@
 <template>
   <el-config-provider :locale="currentLocale">
     <div class="app-container">
-      <div class="header">
-        <div class="logo">AI Studio Dataset</div>
-        <div class="header-right">
-          <el-tooltip :content="uiStore.isUploadProgressVisible ? t('upload.hideOverlayTip') : t('upload.showOverlayTip')" placement="bottom">
-            <el-button @click="uiStore.toggleUploadProgressVisibility()" circle class="header-icon-button">
-              <el-icon><Upload /></el-icon>
-            </el-button>
-          </el-tooltip>
-          <ThemeSwitcher />
-          <LanguageSwitcher />
+      <template v-if="cookieStore.isReady">
+        <div class="header">
+          <div class="logo">AI Studio Dataset</div>
+          <div class="header-right">
+            <el-tooltip :content="uiStore.isUploadProgressVisible ? t('upload.hideOverlayTip') : t('upload.showOverlayTip')" placement="bottom">
+              <el-button @click="uiStore.toggleUploadProgressVisibility()" circle class="header-icon-button">
+                <el-icon><Upload /></el-icon>
+              </el-button>
+            </el-tooltip>
+            <ThemeSwitcher />
+            <LanguageSwitcher />
+          </div>
         </div>
-      </div>
-      <div class="main-content">
-        <ExplorerPanel />
-        <MainContentDisplay />
-      </div>
-      <UploadProgressOverlay />
+        <div class="main-content">
+          <ExplorerPanel />
+          <MainContentDisplay />
+        </div>
+        <UploadProgressOverlay />
+      </template>
+      <template v-else>
+        <div class="cookie-not-ready">
+          <div class="cookie-not-ready-content">
+            <h2>{{ t('cookie.notReadyTitle') }}</h2>
+            <p>{{ t('cookie.notReadyMessage') }}</p>
+          </div>
+        </div>
+      </template>
+      <CookieInput v-if="showCookieInput" />
     </div>
   </el-config-provider>
 </template>
 
 <script setup>
-import { onMounted, computed } from 'vue'; 
+import { onMounted, computed, ref } from 'vue'; 
 import ExplorerPanel from './components/ExplorerPanel.vue';
 import MainContentDisplay from './components/MainContentDisplay.vue';
-import UploadProgressOverlay from './components/UploadProgressOverlay.vue'; // Import the overlay
+import UploadProgressOverlay from './components/UploadProgressOverlay.vue';
+import CookieInput from './components/CookieInput.vue';
 import { useDatasetStore } from './stores/datasetStore'; 
-import { useUploadStore } from './stores/uploadStore'; // Import upload store for potential initialization if needed
+import { useUploadStore } from './stores/uploadStore';
 import { useUIStore } from './stores/uiStore';
+import { useCookieStore } from './stores/cookieStore';
 import { useI18n } from 'vue-i18n'
 import { ElConfigProvider } from 'element-plus'
-import zhCn from 'element-plus/dist/locale/zh-cn.mjs'
-import en from 'element-plus/dist/locale/en.mjs'
+import zhCn from './i18n/locales/zh-CN.js'
+import en from './i18n/locales/en-US.js'
 import LanguageSwitcher from './components/LanguageSwitcher.vue';
 import ThemeSwitcher from './components/ThemeSwitcher.vue';
-import { Upload } from '@element-plus/icons-vue'; // Import the Upload icon
-import { ElTooltip, ElButton, ElIcon } from 'element-plus'; // Import ElTooltip, ElButton, ElIcon
+import { Upload } from '@element-plus/icons-vue';
+import { ElTooltip, ElButton, ElIcon } from 'element-plus';
 
 // Initialize stores
 const datasetStore = useDatasetStore();
-const uploadStore = useUploadStore(); // Initialize upload store
+const uploadStore = useUploadStore();
 const uiStore = useUIStore();
+const cookieStore = useCookieStore();
 
-const { locale, t } = useI18n(); // Added t for tooltip internationalization
+const { locale, t } = useI18n();
+const showCookieInput = ref(false);
 
 const currentLocale = computed(() => {
   return locale.value === 'zh-CN' ? zhCn : en
@@ -54,13 +69,16 @@ onMounted(async () => {
   // 初始化主题
   uiStore.initTheme();
   
-  // Fetch initial global data
-  // console.log('App.vue onMounted: Fetching initial constraints');
-  await datasetStore.fetchDatasetConstraints();
-  // Initial dataset load will be triggered by ExplorerPanel itself now
-
-  // Example: Add a dummy task to test the overlay (remove in production)
-  // uploadStore.addTask({ name: 'Initial Test Task.jpg', type: 'file' });
+  // 初始化cookie
+  const hasCookie = await cookieStore.initializeCookie();
+  if (!hasCookie) {
+    showCookieInput.value = true;
+  }
+  
+  // 只有在cookie就绪时才获取数据集约束
+  if (cookieStore.isReady) {
+    await datasetStore.fetchDatasetConstraints();
+  }
 });
 </script>
 
@@ -170,5 +188,31 @@ html, body {
   --el-text-color-regular: #606266;
   --el-border-color-light: #e4e7ed;
   --el-fill-color-light: #f5f7fa;
+}
+
+.cookie-not-ready {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+  background-color: var(--el-bg-color);
+}
+
+.cookie-not-ready-content {
+  text-align: center;
+  padding: 2rem;
+  background-color: var(--el-bg-color-overlay);
+  border-radius: 8px;
+  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
+}
+
+.cookie-not-ready-content h2 {
+  margin-bottom: 1rem;
+  color: var(--el-text-color-primary);
+}
+
+.cookie-not-ready-content p {
+  color: var(--el-text-color-regular);
+  margin: 0;
 }
 </style>

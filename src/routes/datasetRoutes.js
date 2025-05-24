@@ -10,6 +10,8 @@ import {
   deleteDataset,
   deleteFileFromDataset
 } from '../controllers/datasetController.js';
+import { setCookie, getCookie } from '../services/aiStudioService.js';
+import { logger } from '../config/logger.js';
 
 const router = express.Router();
 
@@ -25,5 +27,46 @@ router.delete('/:datasetId', deleteDataset); // DELETE /api/datasets/:datasetId
 
 router.get('/:datasetId/files/:fileId/url', getDatasetFileDownloadUrl); // GET /api/datasets/:datasetId/files/:fileId/url
 router.delete('/:datasetId/files/:fileId', deleteFileFromDataset); // DELETE /api/datasets/:datasetId/files/:fileId
+
+// 设置cookie的路由
+router.post('/cookie', async (req, res) => {
+  const { cookie } = req.body;
+  if (!cookie) {
+    return res.status(400).json({
+      success: false,
+      error: '未提供cookie'
+    });
+  }
+
+  try {
+    const success = setCookie(cookie);
+    if (success) {
+      res.json({
+        success: true,
+        message: 'Cookie设置成功'
+      });
+    } else {
+      res.status(400).json({
+        success: false,
+        error: 'Cookie设置失败'
+      });
+    }
+  } catch (error) {
+    logger.error('设置cookie时发生错误:', error);
+    res.status(500).json({
+      success: false,
+      error: '设置cookie时发生错误'
+    });
+  }
+});
+
+// 获取当前cookie状态的路由
+router.get('/cookie/status', async (req, res) => {
+  const cookie = getCookie();
+  res.json({
+    success: true,
+    hasCookie: !!cookie
+  });
+});
 
 export default router;

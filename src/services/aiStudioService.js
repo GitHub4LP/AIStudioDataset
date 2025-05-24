@@ -5,16 +5,35 @@ import { logger, logPerformance, logError } from '../config/logger.js';
 let aiStudioInstance = null;
 let cookie = '';
 
+// 尝试从文件读取cookie
 try {
   cookie = fs.readFileSync('cookie.txt', 'utf8');
+  logger.info('成功从文件读取cookie');
 } catch (err) {
-  logger.error('读取 cookie 失败:', err);
-  // Consider whether to throw an error here or let initialization fail
+  logger.debug('从文件读取cookie失败:', err);
+}
+
+// 设置cookie的函数
+export function setCookie(newCookie) {
+  if (!newCookie) {
+    logger.error('尝试设置空的cookie');
+    return false;
+  }
+  cookie = newCookie;
+  // 重置实例，这样下次获取时会使用新的cookie重新初始化
+  aiStudioInstance = null;
+  logger.info('成功设置新的cookie');
+  return true;
+}
+
+// 获取当前cookie
+export function getCookie() {
+  return cookie;
 }
 
 async function initializeAIStudio() {
   if (!cookie) {
-    throw new Error('未找到 cookie.txt 文件或读取失败');
+    throw new Error('未找到有效的cookie');
   }
   if (!aiStudioInstance) {
     logger.info('正在初始化 AI Studio...');
@@ -47,9 +66,6 @@ async function initializeAIStudio() {
 
 function getAIStudioInstance() {
   if (!aiStudioInstance) {
-    // This case should ideally be handled by ensuring initializeAIStudio is called and awaited at startup.
-    // Throwing an error or attempting re-initialization depends on desired behavior.
-    // For now, assume initialization is handled at server start.
     logger.warn('AI Studio 实例尚未初始化，但被请求。');
     throw new Error('AI Studio 实例未初始化。请确保在服务器启动时已成功初始化。');
   }
