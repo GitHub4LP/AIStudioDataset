@@ -93,7 +93,7 @@ export const uploadToServerDataset = async (req, res) => {
       logger.info(`uploadToServerDataset: Processing directory upload.`, { requestId, uploadId, directory: fullPathToProcess });
       sendProgress(uploadId, { status: 'processing_folder', message: `Starting folder upload: ${fileName}`, folderName: fileName, progress: 1 });
       
-      async function uploadDirectory(currentDir, baseDatasetPath, parentUploadId, reqId) { // Added reqId
+      async function uploadDirectory(currentDir, baseDatasetPath, parentUploadId, reqId) {
         const results = [];
         const items = await readdir(currentDir);
         logger.debug(`uploadDirectory: Reading directory contents.`, { requestId: reqId, parentUploadId, currentDir, itemCount: items.length });
@@ -114,9 +114,9 @@ export const uploadToServerDataset = async (req, res) => {
             const sseDataForSubdir = { status: 'processing_subdir', message: `Entering subdirectory: ${item}`, subDirectoryName: item };
             logger.debug(`SSE Sent (Folder Status): uploadId=${parentUploadId}, data=${JSON.stringify(sseDataForSubdir)}`, { requestId: reqId });
             sendProgress(parentUploadId, sseDataForSubdir);
-            results.push(...await uploadDirectory(itemPath, normalizedFileAbs, parentUploadId, reqId)); // Pass reqId
+            results.push(...await uploadDirectory(itemPath, normalizedFileAbs, parentUploadId, reqId));
           } else {
-            try { // Wrap individual file processing in try...catch
+            try {
               logger.info(`uploadDirectory: Starting individual file upload.`, { requestId: reqId, parentUploadId, itemPath, itemName: item });
               const sseDataForFileStart = { status: 'processing_file', message: `Starting upload for file: ${item}`, individualFileName: item, progress: 0 };
               logger.debug(`SSE Sent (Individual File): uploadId=${parentUploadId}, data=${JSON.stringify(sseDataForFileStart)}`, { requestId: reqId });
@@ -132,76 +132,76 @@ export const uploadToServerDataset = async (req, res) => {
               const uploadTask = client.putSuperObject({
                 bucketName,
                 objectName: fileKey,
-              data: itemPath,
-              partConcurrency: 2,
-              onProgress: (event) => {
-                const bosSpecificProgress = 10 + (event.progress * 0.8); 
-                logger.debug(`uploadDirectory: BOS onProgress event.`, { requestId: reqId, parentUploadId, itemName: item, bosProgress: event.progress, overallProgress: bosSpecificProgress, speed: event.speed });
-                const sseDataForBosProgress = { 
-                  status: 'uploading_to_bos', 
-                  message: `BOS Upload: ${item} ${event.progress}%`,
-                  individualFileName: item, 
-                  progress: bosSpecificProgress,
-                  loadedBytes: event.loaded,
-                  totalBytes: event.total,
-                  speed: event.speed 
-                };
-                logger.debug(`SSE Sent (Individual File): uploadId=${parentUploadId}, data=${JSON.stringify(sseDataForBosProgress)}`, { requestId: reqId });
-                sendProgress(parentUploadId, sseDataForBosProgress);
+                data: itemPath,
+                partConcurrency: 2,
+                onProgress: (event) => {
+                  const bosSpecificProgress = 10 + (event.progress * 0.8); 
+                  logger.debug(`uploadDirectory: BOS onProgress event.`, { requestId: reqId, parentUploadId, itemName: item, bosProgress: event.progress, overallProgress: bosSpecificProgress, speed: event.speed });
+                  const sseDataForBosProgress = { 
+                    status: 'uploading_to_bos', 
+                    message: `BOS Upload: ${item} ${event.progress}%`,
+                    individualFileName: item, 
+                    progress: bosSpecificProgress,
+                    loadedBytes: event.loaded,
+                    totalBytes: event.total,
+                    speed: event.speed 
+                  };
+                  logger.debug(`SSE Sent (Individual File): uploadId=${parentUploadId}, data=${JSON.stringify(sseDataForBosProgress)}`, { requestId: reqId });
+                  sendProgress(parentUploadId, sseDataForBosProgress);
+                }
+              });
+              await uploadTask.start();
+              while (!uploadTask.isCompleted()) {
+                await new Promise(resolve => setTimeout(resolve, 200)); 
               }
-            });
-            await uploadTask.start();
-            while (!uploadTask.isCompleted()) {
-              await new Promise(resolve => setTimeout(resolve, 200)); 
+              const sseDataForBosComplete = { status: 'uploading_to_bos_completed', message: `BOS: Finished ${item}.`, individualFileName: item, progress: 90 };
+              logger.debug(`SSE Sent (Individual File): uploadId=${parentUploadId}, data=${JSON.stringify(sseDataForBosComplete)}`, { requestId: reqId });
+              sendProgress(parentUploadId, sseDataForBosComplete);
+              logPerformance(`BOS上传 - ${item}`, fileUploadStartTime);
+              logger.info(`uploadDirectory: BOS upload completed.`, { requestId: reqId, parentUploadId, itemName: item, fileKey });
+
+              logger.debug(`Calling aiStudio.addFile for item: ${item}, fileKey: ${fileKey}`, { requestId: reqId });
+              const addFileStartTime = Date.now();
+              const addFileResp = await aiStudio.addFile(item, fileKey, false);
+              logger.debug(`aiStudio.addFile response for ${item}: ${JSON.stringify(addFileResp.body)}`, { requestId: reqId });
+              logPerformance(`AI Studio添加文件 - ${item}`, addFileStartTime);
+              logger.debug(`uploadDirectory: AI Studio addFile response.`, { requestId: reqId, parentUploadId, itemName: item, responseBody: addFileResp.body });
+
+              if (addFileResp && addFileResp.body && addFileResp.body.result && addFileResp.body.result.fileId) {
+                logger.info(`uploadDirectory: File registered with AI Studio.`, { requestId: reqId, parentUploadId, itemName: item, fileId: addFileResp.body.result.fileId });
+                const sseDataForFileComplete = { status: 'file_completed', message: `Registered: ${item}`, individualFileName: item, fileId: addFileResp.body.result.fileId, fileAbs: normalizedFileAbs, progress: 100 };
+                logger.debug(`SSE Sent (Individual File): uploadId=${parentUploadId}, data=${JSON.stringify(sseDataForFileComplete)}`, { requestId: reqId });
+                sendProgress(parentUploadId, sseDataForFileComplete);
+                results.push({
+                  success: true,
+                  fileId: addFileResp.body.result.fileId,
+                  fileAbs: normalizedFileAbs,
+                  fileName: item
+                });
+              } else {
+                logger.error(`uploadDirectory: Failed to register file with AI Studio.`, { requestId: reqId, parentUploadId, itemName: item, error: addFileResp.body?.error_msg, responseBody: addFileResp.body });
+                const sseDataForFileFail = { status: 'file_failed', message: `Register failed: ${item}`, individualFileName: item, error: addFileResp.body?.error_msg || 'Unknown error' };
+                logger.debug(`SSE Sent (Individual File): uploadId=${parentUploadId}, data=${JSON.stringify(sseDataForFileFail)}`, { requestId: reqId });
+                sendProgress(parentUploadId, sseDataForFileFail);
+                results.push({
+                  success: false,
+                  fileName: item,
+                  fileAbs: normalizedFileAbs,
+                  error: `添加到AI Studio失败: ${addFileResp.body?.error_msg || '未知错误'}`
+                });
+              }
+              await new Promise(resolve => setTimeout(resolve, 200));
+            } catch (e) {
+              logger.error(`Error processing file ${itemPath} in uploadDirectory: ${e.message}`, { itemName: item, itemPath, error: e, stack: e.stack, requestId: reqId });
+              sendProgress(parentUploadId, { status: 'file_failed', message: `Error processing ${item}: ${e.message}`, individualFileName: item, error: e.message });
+              results.push({ success: false, fileName: item, fileAbs: normalizedFileAbs, error: `Error processing ${item}: ${e.message}` });
             }
-            const sseDataForBosComplete = { status: 'uploading_to_bos_completed', message: `BOS: Finished ${item}.`, individualFileName: item, progress: 90 };
-            logger.debug(`SSE Sent (Individual File): uploadId=${parentUploadId}, data=${JSON.stringify(sseDataForBosComplete)}`, { requestId: reqId });
-            sendProgress(parentUploadId, sseDataForBosComplete);
-            logPerformance(`BOS上传 - ${item}`, fileUploadStartTime); // Retained logPerformance
-            logger.info(`uploadDirectory: BOS upload completed.`, { requestId: reqId, parentUploadId, itemName: item, fileKey });
-
-            logger.debug(`Calling aiStudio.addFile for item: ${item}, fileKey: ${fileKey}`, { requestId: reqId });
-            const addFileStartTime = Date.now();
-            const addFileResp = await aiStudio.addFile(item, fileKey, false);
-            logger.debug(`aiStudio.addFile response for ${item}: ${JSON.stringify(addFileResp.body)}`, { requestId: reqId });
-            logPerformance(`AI Studio添加文件 - ${item}`, addFileStartTime); // Retained logPerformance
-            logger.debug(`uploadDirectory: AI Studio addFile response.`, { requestId: reqId, parentUploadId, itemName: item, responseBody: addFileResp.body });
-
-
-            if (addFileResp && addFileResp.body && addFileResp.body.result && addFileResp.body.result.fileId) {
-              logger.info(`uploadDirectory: File registered with AI Studio.`, { requestId: reqId, parentUploadId, itemName: item, fileId: addFileResp.body.result.fileId });
-              const sseDataForFileComplete = { status: 'file_completed', message: `Registered: ${item}`, individualFileName: item, fileId: addFileResp.body.result.fileId, fileAbs: normalizedFileAbs, progress: 100 };
-              logger.debug(`SSE Sent (Individual File): uploadId=${parentUploadId}, data=${JSON.stringify(sseDataForFileComplete)}`, { requestId: reqId });
-              sendProgress(parentUploadId, sseDataForFileComplete);
-              results.push({
-                success: true,
-                fileId: addFileResp.body.result.fileId,
-                fileAbs: normalizedFileAbs,
-                fileName: item
-              });
-            } else {
-              logger.error(`uploadDirectory: Failed to register file with AI Studio.`, { requestId: reqId, parentUploadId, itemName: item, error: addFileResp.body?.error_msg, responseBody: addFileResp.body });
-              const sseDataForFileFail = { status: 'file_failed', message: `Register failed: ${item}`, individualFileName: item, error: addFileResp.body?.error_msg || 'Unknown error' };
-              logger.debug(`SSE Sent (Individual File): uploadId=${parentUploadId}, data=${JSON.stringify(sseDataForFileFail)}`, { requestId: reqId });
-              sendProgress(parentUploadId, sseDataForFileFail);
-              results.push({
-                success: false,
-                fileName: item,
-                fileAbs: normalizedFileAbs,
-                error: `添加到AI Studio失败: ${addFileResp.body?.error_msg || '未知错误'}`
-              });
-            }
-            await new Promise(resolve => setTimeout(resolve, 200));
-          } catch (e) {
-            logger.error(`Error processing file ${itemPath} in uploadDirectory: ${e.message}`, { itemName: item, itemPath, error: e, stack: e.stack, requestId: reqId });
-            sendProgress(parentUploadId, { status: 'file_failed', message: `Error processing ${item}: ${e.message}`, individualFileName: item, error: e.message });
-            results.push({ success: false, fileName: item, fileAbs: normalizedFileAbs, error: `Error processing ${item}: ${e.message}` });
           }
         }
         return results;
       }
 
-      const uploadResults = await uploadDirectory(fullPathToProcess, folderPath, uploadId, requestId); // Pass requestId
+      const uploadResults = await uploadDirectory(fullPathToProcess, folderPath, uploadId, requestId);
       const validResults = uploadResults.filter(r => r);
       logger.info('uploadToServerDataset: Directory upload process completed.', { requestId, uploadId, resultsCount: validResults.length });
       
@@ -215,7 +215,7 @@ export const uploadToServerDataset = async (req, res) => {
       }
 
       const allSuccessful = validResults.every(r => r.success);
-      logPerformance('完整目录上传', uploadStartTime); // Retained logPerformance
+      logPerformance('完整目录上传', uploadStartTime);
       logger.info(`uploadToServerDataset: Directory upload final status.`, { requestId, uploadId, allSuccessful, successfulCount: validResults.filter(r => r.success).length, totalProcessed: validResults.length });
       
       const sseDataForCompletion = { 
@@ -231,8 +231,7 @@ export const uploadToServerDataset = async (req, res) => {
         message: allSuccessful ? '文件夹上传成功' : '文件夹部分上传成功',
         results: validResults
       });
-    } // Correctly closing the if (stats.isDirectory()) block
-    else { // Single file upload
+    } else { // Single file upload
       logger.info(`uploadToServerDataset: Processing single file upload.`, { requestId, uploadId, filePath: fullPathToProcess });
       sendProgress(uploadId, { status: 'processing_server', message: 'File received by server, starting BOS upload.', progress: 5 });
       
@@ -246,16 +245,16 @@ export const uploadToServerDataset = async (req, res) => {
         data: fullPathToProcess,
         partConcurrency: 2,
         onProgress: (event) => {
-            const bosSpecificProgress = 10 + (event.progress * 0.8); 
-            logger.debug('uploadToServerDataset: BOS onProgress event for single file.', { requestId, uploadId, fileName, bosProgress: event.progress, overallProgress: bosSpecificProgress, speed: event.speed });
-            sendProgress(uploadId, { 
-                status: 'uploading_to_bos', 
-                message: `BOS Upload: ${fileName} ${event.progress}%`,
-                progress: bosSpecificProgress,
-                loadedBytes: event.loaded,
-                totalBytes: event.total,
-                speed: event.speed
-            });
+          const bosSpecificProgress = 10 + (event.progress * 0.8); 
+          logger.debug('uploadToServerDataset: BOS onProgress event for single file.', { requestId, uploadId, fileName, bosProgress: event.progress, overallProgress: bosSpecificProgress, speed: event.speed });
+          sendProgress(uploadId, { 
+            status: 'uploading_to_bos', 
+            message: `BOS Upload: ${fileName} ${event.progress}%`,
+            progress: bosSpecificProgress,
+            loadedBytes: event.loaded,
+            totalBytes: event.total,
+            speed: event.speed
+          });
         }
       });
       await uploadTask.start();
@@ -268,9 +267,8 @@ export const uploadToServerDataset = async (req, res) => {
       logger.debug(`uploadToServerDataset: Registering single file with AI Studio.`, { requestId, uploadId, fileName, fileKey });
       const addFileStartTime = Date.now();
       const addFileResp = await aiStudio.addFile(fileName, fileKey, false);
-      logPerformance(`AI Studio添加文件 - ${fileName}`, addFileStartTime); // Retained logPerformance
+      logPerformance(`AI Studio添加文件 - ${fileName}`, addFileStartTime);
       logger.debug(`uploadToServerDataset: AI Studio addFile response for single file.`, { requestId, uploadId, responseBody: addFileResp.body });
-
 
       if (!addFileResp || !addFileResp.body || !addFileResp.body.result || !addFileResp.body.result.fileId) {
         logger.error('uploadToServerDataset: Failed to register single file with AI Studio.', { requestId, uploadId, fileName, error: addFileResp.body?.error_msg, responseBody: addFileResp.body });
@@ -291,7 +289,7 @@ export const uploadToServerDataset = async (req, res) => {
         progress: 100
       });
       closeConnection(uploadId);
-      logPerformance('完整单文件上传', uploadStartTime); // Retained logPerformance
+      logPerformance('完整单文件上传', uploadStartTime);
       logger.info('uploadToServerDataset: Single file upload operation completed successfully.', { requestId, uploadId, fileName, fileId });
       res.json({
         success: true,
