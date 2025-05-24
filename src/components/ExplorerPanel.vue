@@ -598,6 +598,19 @@ onBeforeUnmount(() => {
   document.removeEventListener('click', closeContextMenu);
 });
 
+// 添加缺失的响应式变量
+const createDatasetDialogVisible = ref(false);
+const processedFilesForDialog = ref([]);
+
+const handleDatasetCreatedWithFiles = async (datasetData) => {
+  try {
+    await datasetStore.createDataset(datasetData);
+    ElMessage.success(t('dataset.createSuccess'));
+  } catch (error) {
+    ElMessage.error(t('dataset.createFailed') + ': ' + error.message);
+  }
+};
+
 </script>
 
 <style scoped>

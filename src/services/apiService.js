@@ -84,12 +84,12 @@ export async function deleteDataset(datasetId) {
 
 /**
  * Uploads a server-side file to be part of a dataset (gets its fileId and fileAbs).
- * Corresponds to POST /api/upload-to-dataset
+ * Corresponds to POST /api/upload/to-dataset
  * @param {object} fileInfo - Information about the server file { filePath, fileName, folderPath, currentPath, selectedBasePath }.
  * @returns {Promise<any>}
  */
 export async function registerServerFile(fileInfo) {
-  const response = await fetch(`${API_BASE_URL}/upload-to-dataset`, {
+  const response = await fetch(`${API_BASE_URL}/upload/to-dataset`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(fileInfo),
@@ -98,12 +98,11 @@ export async function registerServerFile(fileInfo) {
 }
 
 /**
- * Fetches dataset constraints.
- * Corresponds to GET /api/dataset-constraints
- * @returns {Promise<any>}
+ * 获取数据集约束条件
+ * Corresponds to GET /api/datasets/constraints
  */
-export async function getDatasetConstraints() {
-  const response = await fetch(`${API_BASE_URL}/dataset-constraints`);
+export const getDatasetConstraints = async () => {
+  const response = await fetch(`${API_BASE_URL}/datasets/constraints`);
   return handleResponse(response);
 }
 
@@ -144,16 +143,14 @@ export async function createDataset(datasetData) {
   return handleResponse(response);
 }
 
-// Add more functions as needed, e.g., for local file uploads, URL fetching to dataset
-// For example, for local file upload:
 /**
  * Uploads a local file directly.
- * Corresponds to POST /api/upload-local-to-dataset
+ * Corresponds to POST /api/upload/local-to-dataset
  * @param {FormData} formData - The FormData object containing the file and other metadata.
  * @returns {Promise<any>}
  */
 export async function uploadLocalFile(formData) {
-    const response = await fetch(`${API_BASE_URL}/upload-local-to-dataset`, {
+    const response = await fetch(`${API_BASE_URL}/upload/local-to-dataset`, {
         method: 'POST',
         // 'Content-Type' header is automatically set by browser for FormData
         body: formData,
@@ -163,12 +160,12 @@ export async function uploadLocalFile(formData) {
 
 /**
  * Fetches a file via URL and adds it to dataset temporary storage.
- * Corresponds to POST /api/fetch-to-dataset
+ * Corresponds to POST /api/upload/fetch-to-dataset
  * @param {object} fetchData - { url, fileName, referer, userAgent }
  * @returns {Promise<any>}
  */
 export async function fetchUrlToDataset(fetchData) {
-    const response = await fetch(`${API_BASE_URL}/fetch-to-dataset`, {
+    const response = await fetch(`${API_BASE_URL}/upload/fetch-to-dataset`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(fetchData),

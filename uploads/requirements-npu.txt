@@ -1,0 +1,18 @@
+aiohttp
+# auto_tune
+# av
+# dataflow
+hccl
+hccl_parser
+kornia
+llm_datadist
+mindspore
+msobjdump
+schedule_search
+sentencepiece
+soundfile
+spandrel
+torch-npu
+torchaudio
+torchsde
+transformers

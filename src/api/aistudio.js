@@ -39,8 +39,8 @@ export const validateDatasetParams = (params) => {
         throw new Error(`数据集名称长度不能超过 ${constraints.MAX_DATASET_NAME_LENGTH} 个字符`);
     }
 
-    // 验证数据集描述
-    if (datasetAbs && datasetAbs.length > constraints.MAX_DATASET_ABS_LENGTH) {
+    // 验证数据集描述（只验证长度，不验证是否为空）
+    if (datasetAbs && typeof datasetAbs === 'string' && datasetAbs.length > constraints.MAX_DATASET_ABS_LENGTH) {
         throw new Error(`数据集描述长度不能超过 ${constraints.MAX_DATASET_ABS_LENGTH} 个字符`);
     }
 
@@ -60,11 +60,6 @@ export const validateDatasetParams = (params) => {
     if (!Array.isArray(fileIds)) {
         throw new Error('文件ID列表必须是数组格式');
     }
-    // This specific check might be too restrictive if fileIds are not always present (e.g. creating an empty dataset)
-    // Or if it's for a single file upload, fileIds might be a placeholder.
-    // The original server.js had placeholder like `fileIds: [1]` for some validations.
-    // Consider if this validation needs to be more flexible or context-aware.
-    // For now, retaining original logic.
     if (fileIds.length > constraints.MAX_FILES_PER_DATASET) {
         throw new Error(`文件数量不能超过 ${constraints.MAX_FILES_PER_DATASET} 个`);
     }
@@ -214,11 +209,15 @@ class AI_Studio {
         fileAbsList,
         ispublic
     ) => {
+        // 如果datasetAbs为空，使用datasetName作为默认值
+        const finalDatasetAbs = datasetAbs || datasetName;
+        const finalDatasetContent = datasetContent || finalDatasetAbs;
+        
         return this.agent.post("/studio/dataset/add").type("form").send({
             datasetId: datasetId,
             datasetName: datasetName,
-            datasetAbs: datasetAbs,
-            datasetContent: datasetContent,
+            datasetAbs: finalDatasetAbs,
+            datasetContent: finalDatasetContent,
             authorName: void 0,
             datasetType: void 0,
             protocolId: void 0,

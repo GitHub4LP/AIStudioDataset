@@ -251,7 +251,7 @@ const confirmRemoveFileFromDataset = async (eventData) => {
       }
     );
 
-    const response = await datasetStore.removeFileFromDataset(datasetId, fileId);
+    const response = await datasetStore.removeFileFromDataset({ datasetId, fileIdToRemove: fileId });
     if (response.success) {
       ElMessage.success(t('file.removeSuccess'));
       // 更新数据集详情

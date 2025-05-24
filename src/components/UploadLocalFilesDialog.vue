@@ -272,6 +272,7 @@ const startUploadProcess = async () => {
     try {
       const formData = new FormData();
       formData.append('file', fileObj.raw);
+      formData.append('uploadId', subTaskId || batchTaskId);
       
       // Simulate some progress for the sub-task if it exists, or main task for single file
       const targetTaskIdForProgress = subTaskId || batchTaskId;

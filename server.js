@@ -1,8 +1,9 @@
 import express from 'express';
 import { fileURLToPath } from 'url';
-import { dirname, join, readFile } from 'path';
+import { dirname, join } from 'path';
+import { promises as fs } from 'fs';
 import { createServer as createViteServer } from 'vite';
-import fs from 'fs'; // Keep for cookie reading, if not moved to service init
+import fsSync from 'fs'; // Keep for cookie reading, if not moved to service init
 import {
   logger,
   logPerformance,
@@ -75,7 +76,7 @@ async function createServer() {
 
     // For non-API requests, serve the main HTML file for the Vite frontend.
     try {
-      const template = await readFile(join(__dirname, 'index.html'), 'utf-8');
+      const template = await fs.readFile(join(__dirname, 'index.html'), 'utf-8');
       const html = await vite.transformIndexHtml(req.originalUrl, template);
       res.status(200).set({ 'Content-Type': 'text/html' }).end(html);
     } catch (e) {

@@ -232,26 +232,30 @@ const validateForm = () => {
 };
 
 const handleSaveChanges = async () => {
+  if (!datasetForm.value) return;
+  
   if (!validateForm()) return;
 
-  isSaving.value = true;
   try {
-    const payload = {
-      datasetName: datasetForm.value.name,
-      datasetAbs: datasetForm.value.description,
-      tags: datasetForm.value.tags,
-      fileIds: datasetForm.value.fileIds, // These must be from the loaded dataset details
-      fileAbsList: datasetForm.value.fileAbsList,
-      ispublic: datasetForm.value.ispublic,
-    };
+  isSaving.value = true;
+    // 如果描述为空，使用数据集名称作为默认值
+    const description = datasetForm.value.description || datasetForm.value.name;
     
-    await datasetStore.updateDataset({ datasetId: props.datasetId, data: payload });
+    await datasetStore.updateDataset({
+      datasetId: props.datasetId,
+      datasetName: datasetForm.value.name,
+      datasetAbs: description,
+      tags: datasetForm.value.tags,
+      fileIds: datasetForm.value.fileIds,
+      fileAbsList: datasetForm.value.fileAbsList,
+      ispublic: datasetForm.value.ispublic
+    });
+    
     ElMessage.success(t('dataset.updateSuccess'));
     emit('update:visible', false); 
-    // No need to emit 'dataset-updated', reactivity from store will handle UI updates
   } catch (error) {
-    console.error(t('dataset.updateFailed'), error);
-    ElMessage.error(`${t('dataset.updateFailed')}: ${error.message}`);
+    console.error('Error updating dataset:', error);
+    ElMessage.error(error.message || t('error.operationFailed'));
   } finally {
     isSaving.value = false;
   }

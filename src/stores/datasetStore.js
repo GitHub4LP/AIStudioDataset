@@ -7,7 +7,8 @@ import {
     getDatasetConstraints as apiGetDatasetConstraints,
     registerServerFile as apiRegisterServerFile, // For adding files
     createDataset, // <-- 确保导入
-    removeFileFromDataset // <-- 确保导入
+    removeFileFromDataset, // <-- 确保导入
+    getFileDownloadUrl // <-- 添加导入
 } from '@/services/apiService'; // Assuming @ is configured for src
 import { buildFileTree } from '../utils/fileTreeHelper';
 
@@ -151,10 +152,17 @@ export const useDatasetStore = defineStore('dataset', {
       return null;
     },
     
-    async updateDataset({ datasetId, data }) {
+    async updateDataset({ datasetId, datasetName, datasetAbs, tags, fileIds, fileAbsList, ispublic }) {
       this.isLoadingDetails = true; // Indicate loading for the specific dataset
       try {
-        const updatedDataset = await apiUpdateDataset(datasetId, data);
+        const updatedDataset = await apiUpdateDataset(datasetId, {
+          datasetName,
+          datasetAbs,
+          tags,
+          fileIds,
+          fileAbsList,
+          ispublic
+        });
         // Refresh the specific dataset's details and the main list
         await this.fetchDatasetDetails(datasetId, true); // Force refresh
         // Optionally, find and update in the 'datasets' list if structure is simple
@@ -304,6 +312,46 @@ export const useDatasetStore = defineStore('dataset', {
       } catch (error) {
         console.error(`Failed to get BOS URL for dataset ${datasetId}, file ${fileId}:`, error);
         throw error; // Re-throw for the component to handle
+      }
+    },
+
+    async downloadFile(fileId) {
+      if (!fileId) {
+        throw new Error('File ID is required for download.');
+      }
+      
+      try {
+        // 获取文件所属的数据集ID
+        let datasetId = null;
+        for (const [dsId, dataset] of Object.entries(this.detailedDatasets)) {
+          const file = dataset.flatFileList?.find(f => f.fileId === fileId);
+          if (file) {
+            datasetId = dsId;
+            break;
+          }
+        }
+        
+        if (!datasetId) {
+          throw new Error('Could not find dataset for the file.');
+        }
+
+        // 获取下载URL
+        const downloadUrl = await this.getBosUrl(datasetId, fileId);
+        
+        // 创建一个隐藏的a标签来触发下载
+        const link = document.createElement('a');
+        link.href = downloadUrl;
+        link.style.display = 'none';
+        link.setAttribute('download', ''); // 强制下载而不是打开
+        link.setAttribute('rel', 'noreferrer'); // 添加noreferer
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        
+        return { success: true };
+      } catch (error) {
+        console.error(`Failed to download file ${fileId}:`, error);
+        throw error;
       }
     }
   }

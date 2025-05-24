@@ -323,12 +323,6 @@ const handleAddSelectedItems = async () => {
 
   try {
     for (const item of selectedServerItems.value) {
-      const payload = {
-        filePath: item.path,
-        fileName: item.name,
-        folderPath: props.basePathInDataset, // This is the target base path in dataset
-      };
-
       let currentSubTaskId = null;
       if (uploadType === 'server-folder' && item.type === '文件') { // Individual file within a multi-selection or folder
          currentSubTaskId = uploadStore.addSubTask(batchTaskId, {
@@ -351,6 +345,14 @@ const handleAddSelectedItems = async () => {
             uploadType: 'server-folder',
          });
       }
+
+      const payload = {
+        filePath: item.path,
+        fileName: item.name,
+        folderPath: props.basePathInDataset, // This is the target base path in dataset
+        uploadId: currentSubTaskId || batchTaskId, // 添加 uploadId
+      };
+
       // If it's a single 'server-file' upload, batchTaskId is the main task ID.
 
       try {
