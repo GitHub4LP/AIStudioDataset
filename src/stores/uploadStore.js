@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia';
 import { v4 as uuidv4 } from 'uuid'; // For generating unique IDs
 import i18n from '@/i18n'; // Import the i18n instance
+import { useDatasetStore } from './datasetStore'; // Import the dataset store
 
 export const useUploadStore = defineStore('upload', {
   state: () => ({
@@ -38,7 +39,7 @@ export const useUploadStore = defineStore('upload', {
   },
 
   actions: {
-    _finalizeTask(taskId) {
+    async _finalizeTask(taskId) { // Make the function async
       const task = this.tasks.find(t => t.id === taskId);
       if (!task) {
         console.warn(`_finalizeTask: Task with ID ${taskId} not found.`);
@@ -58,6 +59,21 @@ export const useUploadStore = defineStore('upload', {
         this.sseConnections[taskId].close();
         delete this.sseConnections[taskId];
         console.log(`_finalizeTask: SSE Connection closed for task: ${taskId}`);
+      }
+
+      // Trigger dataset refresh for completed tasks with a targetDatasetId
+      if (task && task.targetDatasetId && 
+          (task.status === 'completed' || task.status === 'completed_folder' || task.status === 'completed_folder_with_errors')) {
+          
+          console.log(`Upload task ${task.id} (${task.name}) completed for dataset ${task.targetDatasetId}. Triggering dataset refresh.`);
+          const datasetStore = useDatasetStore(); // Get store instance here
+          try {
+              await datasetStore.fetchDatasetDetails(task.targetDatasetId, true); // Force refresh
+              console.log(`Dataset ${task.targetDatasetId} refreshed successfully after task ${task.id} completion.`);
+          } catch (error) {
+              console.error(`Error refreshing dataset ${task.targetDatasetId} after task ${task.id} completion:`, error);
+              // Optionally, you could dispatch a global error notification here if needed
+          }
       }
 
       this.processUploadQueue();
@@ -122,14 +138,17 @@ export const useUploadStore = defineStore('upload', {
         if (task.type === 'folder' && data.individualFileName) {
             let subTask = task.subTasks.find(st => st.name === data.individualFileName);
             if (!subTask) { // Create subTask if it doesn't exist based on SSE message
-                subTask = { 
-                    id: uuidv4(), 
-                    name: data.individualFileName, 
-                    status: data.status, 
-                    progress: data.progress || 0, 
-                    error: data.error,
-                    fileId: data.fileId,
-                    fileAbs: data.fileAbs,
+                subTask = {
+                    id: uuidv4(),
+                    name: data.individualFileName,
+                    type: 'file', // Ensure this is set for new sub-tasks from SSE
+                    status: data.status,      // From SSE data specific to this file
+                    progress: data.progress || 0, // From SSE data
+                    error: data.error || null,    // From SSE data
+                    fileId: data.fileId || null,  // From SSE data
+                    fileAbs: data.fileAbs || null, // From SSE data
+                    parentId: task.id,          // Optional, for clarity
+                    // Any other relevant fields for a file task can be added here if needed
                 };
                 task.subTasks.push(subTask);
             } else {
@@ -258,7 +277,7 @@ export const useUploadStore = defineStore('upload', {
           // If all subtasks are done, mark parent as completed or failed
           if (completedSubTasks === parentTask.subTasks.length && parentTask.subTasks.length > 0) {
             const hasFailures = parentTask.subTasks.some(st => st.status === 'failed');
-            parentTask.status = hasFailures ? 'failed' : 'completed';
+            parentTask.status = hasFailures ? 'completed_folder_with_errors' : 'completed_folder';
             parentTask.error = hasFailures ? (parentTask.error || i18n.global.t('error.folderUploadPartialFailure')) : null;
           }
           
