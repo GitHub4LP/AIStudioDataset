@@ -17,19 +17,34 @@
       document.head.appendChild(mainScriptTag);
     }
 
-    if ('serviceWorker' in navigator) {
+    // window.SUBPATH is calculated above this block
+    if ('serviceWorker' in navigator && window.SUBPATH && window.SUBPATH !== '/') {
+      // Existing registration logic for './subpath_service_worker.js' remains here
       navigator.serviceWorker.register('./subpath_service_worker.js')
         .then(registration => {
+          console.log('Subpath Service Worker registered with scope:', registration.scope);
           return navigator.serviceWorker.ready;
         })
         .then(readyRegistration => {
+          console.log('Subpath Service Worker ready.');
           loadApp();
         })
         .catch(error => {
-          console.error('SW registration failed: ', error);
-          loadApp();
+          console.error('Subpath SW registration failed: ', error);
+          loadApp(); // Load app even if SW registration fails
         });
     } else {
+      // This else block now catches:
+      // 1. Service workers not supported
+      // 2. window.SUBPATH is undefined/empty
+      // 3. window.SUBPATH is '/' (application is at root)
+      if (window.SUBPATH === '/') {
+        console.log('Application at root, skipping subpath service worker registration.');
+      } else if (!('serviceWorker' in navigator)) {
+        console.log('Service workers not supported, skipping registration.');
+      } else {
+        console.log('SUBPATH not suitable for service worker, skipping registration.');
+      }
       loadApp();
     }
   </script>
