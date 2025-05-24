@@ -30,7 +30,8 @@ const logTranslations = {
 
 // 获取当前语言环境
 const getCurrentLanguage = () => {
-  return process.env.LANGUAGE || 'zh'
+  const lang = process.env.LANGUAGE?.toLowerCase()
+  return (lang && logTranslations[lang]) ? lang : 'zh'
 }
 
 // 翻译日志级别
