@@ -49,18 +49,34 @@ It provides a user interface for these operations, facilitating data preparation
 
 ## 4. Deployment Considerations (Subpath)
 
-This application is designed to be deployed under a URL subpath (e.g., `/my/custom/path/`) without requiring build-time configurations for the path. The frontend dynamically adapts at runtime.
+To deploy this application under a URL subpath (e.g., `/my/custom/path/`), it's essential to configure Vite using an environment variable at build time and for the development server. This ensures that Vite correctly handles asset paths, module loading, and provides the necessary base URL to the client-side application.
 
 Key aspects for subpath deployment:
 
-*   **Vite Configuration (`vite.config.js`):** The `base` option is set to `'./'`. This ensures all static asset paths (JavaScript, CSS, images) in the built `index.html` are relative.
-*   **Runtime Path Detection:**
-    *   **Static Assets:** Relative asset paths work correctly as long as the web server serves `index.html` from the designated subpath. For example, if `index.html` is accessed via `/my/custom/path/`, a relative link like `./assets/app.js` will correctly resolve to `/my/custom/path/assets/app.js`.
-    *   **Vue Router:** The router's base path is dynamically determined at runtime from `window.location.pathname`. It calculates the path from which the application is served and configures its routes accordingly.
-    *   **API Calls:** The base URL for API calls (to `/api/...`) is also dynamically determined at runtime using `window.location.pathname`, ensuring that requests are correctly prefixed with the application's subpath.
-*   **Web Server Configuration:**
-    *   The web server (e.g., Nginx, Apache) must be configured to serve the application's `index.html` file (from the `dist` directory) when the subpath is accessed.
-    *   For any client-side routes (e.g., `/my/custom/path/some-page`), the server should serve `index.html` to allow the Vue Router to handle the routing.
-    *   API requests, now correctly prefixed by the frontend (e.g., `/my/custom/path/api/...`), must be proxied by the web server to the backend Node.js application, stripping the subpath if necessary before hitting the backend (which expects calls at `/api/...`).
+*   **Vite Configuration (`vite.config.js`):**
+    *   The `base` option is set to `process.env.VITE_APP_BASE_PATH || '/'`.
+    *   This means you must set the `VITE_APP_BASE_PATH` environment variable when running the development server or building the application if it's intended for a subpath. For example, `/my/custom/path/`.
+    *   If not set, it defaults to `'/'` for root deployment.
 
-This approach allows the same build artifact to be deployed under different subpaths without rebuilding, as the path adaptation logic resides in the client-side code.
+*   **Client-Side Logic (Router and API calls):**
+    *   The Vue Router (`src/router/index.js`) uses `createWebHistory(import.meta.env.BASE_URL)`.
+    *   The API service (`src/services/apiService.js`) constructs its `API_BASE_URL` using `import.meta.env.BASE_URL`.
+    *   `import.meta.env.BASE_URL` is automatically populated by Vite based on the `base` configuration. This ensures that client-side routing and API calls are correctly prefixed with the subpath.
+
+*   **Development Server:**
+    *   When running `npm run dev` for a subpath, you must prefix the command with the environment variable. For example:
+        ```bash
+        VITE_APP_BASE_PATH=/my/custom/path/ npm run dev
+        ```
+    *   This allows Vite's dev server (including its Hot Module Replacement client) to operate correctly under the specified subpath.
+
+*   **Production Build:**
+    *   Similarly, for a production build targeting a subpath:
+        ```bash
+        VITE_APP_BASE_PATH=/my/custom/path/ npm run build
+        ```
+    *   This ensures asset paths in the generated `dist/index.html` are correctly prefixed.
+
+*   **Web Server Configuration:**
+    *   The web server (e.g., Nginx) must be configured to serve the application's static files (from the `dist` directory) from the specified subpath.
+    *   API requests, which will be made by the frontend to `[subpath]/api/...`, must be proxied to the backend Node.js application. The backend expects API calls at `/api/...`, so the proxy might need to strip the subpath prefix.
