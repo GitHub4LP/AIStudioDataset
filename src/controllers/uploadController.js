@@ -231,8 +231,8 @@ export const uploadToServerDataset = async (req, res) => {
         message: allSuccessful ? '文件夹上传成功' : '文件夹部分上传成功',
         results: validResults
       });
-
-    } else { // Single file upload
+    } // Correctly closing the if (stats.isDirectory()) block
+    else { // Single file upload
       logger.info(`uploadToServerDataset: Processing single file upload.`, { requestId, uploadId, filePath: fullPathToProcess });
       sendProgress(uploadId, { status: 'processing_server', message: 'File received by server, starting BOS upload.', progress: 5 });
       
