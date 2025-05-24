@@ -1,31 +1,49 @@
+// Defines how the application's base path is calculated for API calls.
+// This ensures API requests are correctly prefixed when deployed under a subpath.
 const getDynamicBasePath = () => {
-  let pathname = window.location.pathname;
-  // Get the path up to the last slash. This assumes that if the URL is /foo/bar/page,
-  // the application's base directory is /foo/bar/.
+  // Get the full path from the browser's current URL (e.g., "/my-app/some/page").
+  const pathname = window.location.pathname;
+
+  // Determine the base path. This logic assumes the application's "base"
+  // is the part of the path up to the last slash.
+  // (This logic should be consistent with how the Vue Router calculates its base path).
+  // For example:
+  // - If URL is /my-app/page, pathname is /my-app/page, base becomes /my-app/
+  // - If URL is /my-app/, pathname is /my-app/, base becomes /my-app/
+  // - If URL is /, pathname is /, base becomes /
   let basePath = pathname.substring(0, pathname.lastIndexOf('/') + 1);
 
-  // Ensure it starts with a slash.
+  // Ensure the base path starts with a slash.
+  // Mostly a defensive check, as window.location.pathname usually starts with '/'.
   if (!basePath.startsWith('/')) {
     basePath = '/' + basePath;
   }
-  // Ensure it ends with a slash (unless it's the root '/' itself).
+
+  // Ensure the base path ends with a slash for non-root paths.
+  // The root path "/" is a special case.
   if (basePath !== '/' && !basePath.endsWith('/')) {
     basePath = basePath + '/';
   }
+  // For debugging purposes, you can uncomment the following line:
+  // console.log(`[API Service] Calculated base path: ${basePath} from pathname: ${pathname}`);
   return basePath;
 };
 
-const appBase = getDynamicBasePath(); // Example: / or /subpath/
+const appBase = getDynamicBasePath(); // e.g., "/" or "/subpath/"
 
-// Construct the API_BASE_URL.
-// If appBase is '/', API_BASE_URL becomes '/api'.
-// If appBase is '/subpath/', API_BASE_URL becomes '/subpath/api'.
-// Remove trailing slash from appBase before appending 'api' to avoid '/subpath//api'
-const normalizedAppBase = appBase.endsWith('/') && appBase !== '/' ? appBase.slice(0, -1) : appBase;
-// If appBase was '/', normalizedAppBase is '/'. If appBase was '/subpath/', normalizedAppBase is '/subpath'.
-// If appBase was empty (e.g. from a file:// URL, though unlikely for SPAs), this would need more thought. Assume http/https.
+// Normalize appBase for constructing the API URL.
+// We want to avoid double slashes if appBase is "/" (API path should be "/api").
+// If appBase is "/subpath/", we want "/subpath/api".
+const normalizedAppBase = (appBase !== '/' && appBase.endsWith('/')) 
+                          ? appBase.slice(0, -1) // Remove trailing slash for non-root, e.g., "/subpath"
+                          : appBase;             // Keep "/" as is, or if no trailing slash already
 
-const API_BASE_URL = `${normalizedAppBase === '/' ? '' : normalizedAppBase}/api`; // Example: /api or /subpath/api
+// Construct the final API_BASE_URL.
+// If appBase was "/", normalizedAppBase is "/", so API_BASE_URL becomes "/api".
+// If appBase was "/subpath/", normalizedAppBase is "/subpath", so API_BASE_URL becomes "/subpath/api".
+const API_BASE_URL = `${normalizedAppBase === '/' ? '' : normalizedAppBase}/api`;
+// For debugging purposes, you can uncomment the following line:
+// console.log(`[API Service] Constructed API_BASE_URL: ${API_BASE_URL}`);
 
 /**
  * Handles the response from a fetch call.
