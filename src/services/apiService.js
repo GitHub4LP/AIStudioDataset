@@ -1,19 +1,31 @@
-// Resolve the application's base path.
-// import.meta.env.BASE_URL is set by Vite based on the 'base' config in vite.config.js.
-// It includes leading and trailing slashes if specified (e.g., '/subpath/').
-// If base is './' (for root deployment), BASE_URL will be './'.
-let appBase = import.meta.env.BASE_URL;
+const getDynamicBasePath = () => {
+  let pathname = window.location.pathname;
+  // Get the path up to the last slash. This assumes that if the URL is /foo/bar/page,
+  // the application's base directory is /foo/bar/.
+  let basePath = pathname.substring(0, pathname.lastIndexOf('/') + 1);
 
-// If appBase is './' or '/', the API path starts directly from the root.
-// For a subpath (e.g., '/mysubpath/'), appBase will be that subpath.
-if (appBase === './' || appBase === '/') {
-  appBase = ''; // API path will be just '/api'
-} else {
-  // Remove trailing slash from appBase if it exists, to prevent double slashes like /subpath//api
-  appBase = appBase.replace(/\/$/, '');
-}
+  // Ensure it starts with a slash.
+  if (!basePath.startsWith('/')) {
+    basePath = '/' + basePath;
+  }
+  // Ensure it ends with a slash (unless it's the root '/' itself).
+  if (basePath !== '/' && !basePath.endsWith('/')) {
+    basePath = basePath + '/';
+  }
+  return basePath;
+};
 
-const API_BASE_URL = `${appBase}/api`; // Construct the final API base URL
+const appBase = getDynamicBasePath(); // Example: / or /subpath/
+
+// Construct the API_BASE_URL.
+// If appBase is '/', API_BASE_URL becomes '/api'.
+// If appBase is '/subpath/', API_BASE_URL becomes '/subpath/api'.
+// Remove trailing slash from appBase before appending 'api' to avoid '/subpath//api'
+const normalizedAppBase = appBase.endsWith('/') && appBase !== '/' ? appBase.slice(0, -1) : appBase;
+// If appBase was '/', normalizedAppBase is '/'. If appBase was '/subpath/', normalizedAppBase is '/subpath'.
+// If appBase was empty (e.g. from a file:// URL, though unlikely for SPAs), this would need more thought. Assume http/https.
+
+const API_BASE_URL = `${normalizedAppBase === '/' ? '' : normalizedAppBase}/api`; // Example: /api or /subpath/api
 
 /**
  * Handles the response from a fetch call.
