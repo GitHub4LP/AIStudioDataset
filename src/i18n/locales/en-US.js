@@ -116,7 +116,14 @@ export default {
     dropError: `Error processing dropped files.`,
     addMultipleItems: `Add {count} items`,
     registrationFailed: `Registration failed for {name}: {error}`,
-    noActualFilesRegistered: `Operation completed, but no new files were registered (e.g., empty folders or already existing items).`
+    noActualFilesRegistered: `Operation completed, but no new files were registered (e.g., empty folders or already existing items).`,
+    drop: {
+      serverItemDrop: "Server Item Drop: {name}",
+      serverItemType: "Type: {type}",
+      serverItemPath: "Path: {path}",
+      featureInDevelopment: "(Feature in development)",
+      invalidServerData: "Invalid server file drop data."
+    }
   },
   dataset: {
     name: `Dataset`,
@@ -201,7 +208,12 @@ export default {
     unknown: `Unknown error`,
     cannotDetermineFile: `Cannot determine the file to operate on`,
     unknownFileId: `Unknown file ID`,
-    unknownDatasetId: `Unknown dataset ID`
+    unknownDatasetId: `Unknown dataset ID`,
+    apiCallError: "API call error: {message}",
+    sseConnectionError: "SSE connection error",
+    unknownUploadType: "Unknown upload type: {type}",
+    parentTaskFailed: "Parent task failed",
+    folderUploadPartialFailure: "One or more files failed to upload."
   },
   log: {
     info: `Info`,

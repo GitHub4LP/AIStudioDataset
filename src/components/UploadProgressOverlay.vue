@@ -87,7 +87,7 @@
 </template>
 
 <script setup>
-import { ref, computed, reactive } from 'vue';
+import { ref, computed, reactive, watch } from 'vue'; // Added watch
 import { useUploadStore } from '@/stores/uploadStore';
 import { useUIStore } from '@/stores/uiStore'; // Import uiStore
 import { ElCard, ElButton, ElProgress, ElIcon, ElTooltip, ElMessageBox, ElMessage } from 'element-plus'; // Added ElMessage
@@ -145,6 +145,18 @@ const confirmCloseAllTasks = () => {
         // User cancelled
     });
 };
+
+watch(() => uploadStore.allTasksSorted, (newTasks) => {
+  if (newTasks) {
+    newTasks.forEach(task => {
+      if (task.type === 'folder' && task.subTasks && task.subTasks.length > 0) {
+        console.debug(`UploadProgressOverlay: Folder Task '${task.name}' (ID: ${task.id}) is about to render with subTasks:`, JSON.parse(JSON.stringify(task.subTasks)));
+      } else if (task.type === 'folder' && (!task.subTasks || task.subTasks.length === 0)) {
+        console.debug(`UploadProgressOverlay: Folder Task '${task.name}' (ID: ${task.id}) has no subTasks or subTasks array is empty.`);
+      }
+    });
+  }
+}, { deep: true, immediate: true });
 
 </script>
 

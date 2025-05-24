@@ -112,7 +112,14 @@ export default {
     dropError: `处理拖放的文件时出错。`,
     addMultipleItems: `添加 {count} 个项目`,
     registrationFailed: `{name} 注册失败: {error}`,
-    noActualFilesRegistered: `操作完成，但没有新文件被注册（例如，空文件夹或已存在的项目）。`
+    noActualFilesRegistered: `操作完成，但没有新文件被注册（例如，空文件夹或已存在的项目）。`,
+    drop: {
+      serverItemDrop: "服务器项拖放: {name}",
+      serverItemType: "类型: {type}",
+      serverItemPath: "路径: {path}",
+      featureInDevelopment: "(功能开发中)",
+      invalidServerData: "无效的服务器文件拖放数据。"
+    }
   },
   dataset: {
     name: `数据集`,
@@ -186,7 +193,12 @@ export default {
     loadDatasetFailed: `加载数据集出错`,
     cannotDetermineFile: `无法确定要操作的文件`,
     unknownFileId: `未知的文件ID`,
-    unknownDatasetId: `未知的数据集ID`
+    unknownDatasetId: `未知的数据集ID`,
+    apiCallError: "API 调用错误: {message}",
+    sseConnectionError: "SSE 连接错误",
+    unknownUploadType: "未知的上传类型: {type}",
+    parentTaskFailed: "父任务失败",
+    folderUploadPartialFailure: "一个或多个文件上传失败。"
   },
   log: {
     info: `信息`,
