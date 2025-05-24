@@ -1,11 +1,9 @@
-// Vite provides import.meta.env.BASE_URL which is derived from the `base` config in vite.config.js.
-// This will be "/" if base is "/", or "/subpath/" if base is "/subpath/".
-const appBase = import.meta.env.BASE_URL;
+// Use window.SUBPATH if available (set by sw_loader.js), otherwise default to '/'
+const appBase = window.SUBPATH || '/'; 
 
 // Construct the API_BASE_URL.
 // If appBase is "/", API_BASE_URL becomes "/api".
 // If appBase is "/subpath/", API_BASE_URL becomes "/subpath/api".
-// Ensure no double slashes if appBase is just "/" and to correctly form the path.
 let apiPrefix = appBase;
 if (apiPrefix.endsWith('/') && apiPrefix !== '/') {
   apiPrefix = apiPrefix.slice(0, -1); // Remove trailing slash for non-root, e.g., "/subpath"
@@ -15,7 +13,7 @@ if (apiPrefix === '/') {
 }
 
 const API_BASE_URL = `${apiPrefix}/api`; 
-// For debugging: console.log(`[API Service] import.meta.env.BASE_URL: ${import.meta.env.BASE_URL}, API_BASE_URL: ${API_BASE_URL}`);
+// console.log(`[API Service] window.SUBPATH: ${window.SUBPATH}, API_BASE_URL: ${API_BASE_URL}`);
 
 /**
  * Handles the response from a fetch call.

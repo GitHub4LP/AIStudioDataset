@@ -10,7 +10,8 @@ const routes = [
 ]
 
 const router = createRouter({
-  history: createWebHistory(import.meta.env.BASE_URL), // Use Vite's provided base URL
+  // Use window.SUBPATH if available (set by sw_loader.js), otherwise default to '/'
+  history: createWebHistory(window.SUBPATH || '/'), 
   routes
 })
 
