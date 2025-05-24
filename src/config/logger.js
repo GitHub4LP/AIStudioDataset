@@ -63,6 +63,7 @@ export const logger = winston.createLogger({
       filename: path.join(__dirname, '../../logs/combined-%DATE%.log'),
       datePattern: 'YYYY-MM-DD',
       maxFiles: '14d'
+      // level: 'debug' // Removed to revert to default
     })
   ]
 })
@@ -70,7 +71,8 @@ export const logger = winston.createLogger({
 // 在开发环境下添加控制台输出
 if (process.env.NODE_ENV !== 'production') {
   logger.add(new winston.transports.Console({
-    format: logFormat
+    format: logFormat // Keep existing format
+    // level: 'debug' // Removed to revert to default
   }))
 }
 

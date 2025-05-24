@@ -18,6 +18,7 @@ import fileRoutes from './src/routes/fileRoutes.js';
 import datasetRoutes from './src/routes/datasetRoutes.js';
 import uploadRoutes from './src/routes/uploadRoutes.js';
 import bosRoutes from './src/routes/bosRoutes.js';
+import sseRoutes from './src/routes/sseRoutes.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -64,6 +65,7 @@ async function createServer() {
   app.use('/api/datasets', datasetRoutes);
   app.use('/api/upload', uploadRoutes); // e.g. /api/upload/to-dataset
   app.use('/api/bos', bosRoutes); // e.g. /api/bos/client-config
+  app.use('/api/sse', sseRoutes);
 
   // Catch-all for non-API routes, serve index.html for client-side routing
   app.use('*', async (req, res, next) => {

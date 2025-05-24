@@ -70,6 +70,55 @@ export const useUploadStore = defineStore('upload', {
           try {
               await datasetStore.fetchDatasetDetails(task.targetDatasetId, true); // Force refresh
               console.log(`Dataset ${task.targetDatasetId} refreshed successfully after task ${task.id} completion.`);
+
+              // New logic for handling server folder upload results
+              if ((task.status === 'completed_folder' || (task.status === 'completed_folder_with_errors' && task.uploadResults && task.uploadResults.some(r => r.success))) &&
+                  task.uploadResults && Array.isArray(task.uploadResults) && task.uploadResults.length > 0) {
+                
+                const newFilesData = task.uploadResults
+                  .filter(r => r.success === true) // Ensure only successful files are processed
+                  .map(r => ({
+                    fileId: r.fileId,
+                    fileAbs: r.fileAbs,
+                    name: r.fileName // Map fileName from server result to name for datasetStore
+                  }));
+
+                if (newFilesData.length > 0) {
+                  // console.log(`[UPLOAD_STORE_DEBUG] Calling datasetStore.addFilesToDataset for task ${taskId}, dataset ${task.targetDatasetId} with files:`, JSON.parse(JSON.stringify(newFilesData)));
+                  try {
+                    const targetDatasetDetails = datasetStore.getDatasetById(task.targetDatasetId); // Get details
+
+                    if (!targetDatasetDetails) {
+                      // console.error(`[UPLOAD_STORE_ERROR] Could not retrieve target dataset details for ${task.targetDatasetId} before calling addFilesToDataset. Files may not be linked.`);
+                      task.error = task.error ? `${task.error}; ${i18n.global.t('error.datasetDetailsNotFound')}` : i18n.global.t('error.datasetDetailsNotFound');
+                    } else {
+                      await datasetStore.addFilesToDataset({
+                        datasetId: task.targetDatasetId,
+                        newFilesData: newFilesData,
+                        existingDatasetData: {
+                          datasetName: targetDatasetDetails.label || targetDatasetDetails.name || task.targetDatasetName || 'Unknown Dataset',
+                          fileIds: targetDatasetDetails.fileIds || [],
+                          fileAbsList: targetDatasetDetails.fileAbsList || [],
+                          // Include any other properties from targetDatasetDetails that addFilesToDataset might merge/use
+                        }
+                      });
+                      // console.log(`[UPLOAD_STORE_DEBUG] Successfully called addFilesToDataset for task ${taskId}`);
+                      // Optional: A second fetchDatasetDetails AFTER addFilesToDataset might be good if addFilesToDataset
+                      // doesn't internally update the store's state of that specific dataset comprehensively.
+                      // await datasetStore.fetchDatasetDetails(task.targetDatasetId, true); 
+                    }
+                  } catch (addFileError) {
+                    // console.error(`[UPLOAD_STORE_ERROR] Error calling datasetStore.addFilesToDataset for task ${taskId}:`, addFileError);
+                    task.error = addFileError.message || (addFileError.toString ? addFileError.toString() : i18n.global.t('error.unknown'));
+                    // Optionally, update task error or status to reflect metadata update failure
+                    // task.error = task.error ? `${task.error}; ${i18n.global.t('error.datasetMetadataUpdateFailed')}` : i18n.global.t('error.datasetMetadataUpdateFailed');
+                    // task.status = 'failed'; // Or a more specific error status
+                  }
+                } else {
+                  // console.log(`[UPLOAD_STORE_DEBUG] No successful files to add to dataset metadata for task ${taskId}.`);
+                }
+              }
+
           } catch (error) {
               console.error(`Error refreshing dataset ${task.targetDatasetId} after task ${task.id} completion:`, error);
               // Optionally, you could dispatch a global error notification here if needed
@@ -82,12 +131,13 @@ export const useUploadStore = defineStore('upload', {
     // Initializes a new task and adds it to the main tasks list.
     // This task is then pushed to the pendingQueue to await processing.
     addTask(taskDetails) { // taskDetails will now include the actual file object for local uploads
+      // console.log(`[UPLOAD_STORE_DEBUG] addTask called with taskDetails:`, JSON.parse(JSON.stringify(taskDetails)));
       const newTask = {
         id: taskDetails.id || uuidv4(), // This is the taskId
         name: taskDetails.name,
         type: taskDetails.type || 'file',
         uploadType: taskDetails.uploadType || 'local-file', // Crucial for concurrency type
-        status: 'queued', // New initial status
+        // Default values that can be overridden by taskDetails if present
         progress: 0,
         error: null,
         subTasks: taskDetails.subTasks || [],
@@ -96,15 +146,17 @@ export const useUploadStore = defineStore('upload', {
         targetDatasetName: taskDetails.targetDatasetName || null,
         fileId: null,
         fileAbs: null,
-        // Store raw file data if provided, for local uploads
+        // Specific data properties from taskDetails (or null/undefined if not provided)
         fileData: taskDetails.fileData || null, 
-        // Store server file path if provided
         serverFilePath: taskDetails.serverFilePath || null,
-        // Store URL if provided
         fetchUrl: taskDetails.fetchUrl || null,
-        uploadId: null, // Will be generated when task processing starts (for SSE)
-        eventSource: null, // To store the EventSource object for this task
+        // Internal state properties, should not be overridden by taskDetails typically
+        uploadId: null, 
+        eventSource: null,
+        // Spread taskDetails to include any other properties it might have
         ...taskDetails,
+        // Ensure status is always 'queued' for new tasks, overriding any status from taskDetails
+        status: 'queued', 
       };
       this.tasks.push(newTask);
       this.pendingQueue.push(newTask.id); // Add task ID to pending queue
@@ -114,7 +166,7 @@ export const useUploadStore = defineStore('upload', {
     
     // Helper to update task with SSE data
     _handleSSEMessage(taskId, data) {
-        console.debug(`UploadStore SSE Parsed Data for task ${taskId}:`, JSON.parse(JSON.stringify(data)));
+        // console.debug(`UploadStore SSE Parsed Data for task ${taskId}:`, JSON.parse(JSON.stringify(data)));
         const task = this.tasks.find(t => t.id === taskId);
         if (!task) return;
 
@@ -137,11 +189,13 @@ export const useUploadStore = defineStore('upload', {
         }
         // For folder uploads, individual file updates might come through SSE
         if (task.type === 'folder' && data.individualFileName) {
-            console.debug(`Parent Task for individual file processing: id=${task.id}, name='${task.name}'`);
-            console.debug(`Individual File Data from SSE: name='${data.individualFileName}', status='${data.status}', progress=${data.progress}, fileId='${data.fileId}'`);
+            // console.log(`[UPLOAD_STORE_DEBUG] Parent Task: '${task.name}', SSE individualFileName: '${data.individualFileName}', SSE Status: '${data.status}'`);
+            // console.debug(`Parent Task for individual file processing: id=${task.id}, name='${task.name}'`); // Original console.debug
+            // console.debug(`Individual File Data from SSE: name='${data.individualFileName}', status='${data.status}', progress=${data.progress}, fileId='${data.fileId}'`); // Original console.debug
             let subTask = task.subTasks.find(st => st.name === data.individualFileName);
-            console.debug(`Sub-task find result (null if new):`, subTask ? JSON.parse(JSON.stringify(subTask)) : null);
+            // console.debug(`Sub-task find result (null if new):`, subTask ? JSON.parse(JSON.stringify(subTask)) : null); // Original console.debug
             if (!subTask) { // Create subTask if it doesn't exist based on SSE message
+                // console.log(`[UPLOAD_STORE_DEBUG] Creating new subTask. Intended name: '${data.individualFileName}'`);
                 subTask = {
                     id: uuidv4(),
                     name: data.individualFileName, // CRITICAL: Must be from data.individualFileName
@@ -154,8 +208,10 @@ export const useUploadStore = defineStore('upload', {
                     parentId: task.id,
                 };
                 task.subTasks.push(subTask);
-                console.debug('Sub-task state (after create):', JSON.parse(JSON.stringify(subTask)));
+                // console.log(`[UPLOAD_STORE_DEBUG] New subTask created:`, JSON.parse(JSON.stringify(subTask)));
+                // console.debug('Sub-task state (after create):', JSON.parse(JSON.stringify(subTask))); // Original console.debug
             } else {
+                // console.log(`[UPLOAD_STORE_DEBUG] Updating existing subTask '${subTask.name}'. New SSE data:`, JSON.parse(JSON.stringify(data)));
                 // Update existing sub-task
                 if (data.status) subTask.status = data.status;
                 if (data.progress !== undefined) subTask.progress = data.progress;
@@ -173,12 +229,20 @@ export const useUploadStore = defineStore('upload', {
                 if (data.fileAbs) subTask.fileAbs = data.fileAbs;
                 // Reaffirm name, mainly for consistency, though it's the key for find.
                 if (data.individualFileName) subTask.name = data.individualFileName; 
-                console.debug('Sub-task state (after update):', JSON.parse(JSON.stringify(subTask)));
+                // console.log(`[UPLOAD_STORE_DEBUG] SubTask updated. Current state:`, JSON.parse(JSON.stringify(subTask)));
+                // console.debug('Sub-task state (after update):', JSON.parse(JSON.stringify(subTask))); // Original console.debug
             }
             // Recalculate overall folder progress if needed (simplified here)
              this.updateSubTaskStatus(task.id, subTask.id, subTask.status, subTask.progress, subTask.error, { fileId: subTask.fileId, fileAbs: subTask.fileAbs });
         }
 
+        // Store results for completed folder uploads before finalizing
+        if (data.status === 'completed_folder' || data.status === 'completed_folder_with_errors') {
+            if (data.results && Array.isArray(data.results)) {
+                task.uploadResults = data.results; // Store the results array on the task
+                // console.log(`[UPLOAD_STORE_DEBUG] Stored uploadResults for task ${taskId}:`, JSON.parse(JSON.stringify(task.uploadResults)));
+            }
+        }
 
         if (data.status === 'completed' || data.status === 'failed' || data.status === 'completed_folder' || data.status === 'completed_folder_with_errors') {
             this._finalizeTask(taskId);
@@ -345,25 +409,29 @@ export const useUploadStore = defineStore('upload', {
     },
 
     async _performActualUpload(task) {
+      // console.log(`[UPLOAD_STORE_DEBUG] Entered _performActualUpload. Task:`, JSON.parse(JSON.stringify(task)));
       // Generate uploadId for SSE connection
       task.uploadId = uuidv4(); // Assign unique ID for this specific upload attempt
       console.log(`Starting actual upload for ${task.name}, taskId: ${task.id}, uploadId: ${task.uploadId}`);
       this.updateTaskStatus(task.id, 'uploading', 0); // Initial status update
 
-      const eventSource = new EventSource(`/api/sse/upload-progress/${task.uploadId}`);
+      const sseUrl = `/api/sse/upload-progress/${task.uploadId}`;
+      // console.log(`[UPLOAD_STORE_DEBUG] Attempting to connect to EventSource. URL: '${sseUrl}'`);
+      const eventSource = new EventSource(sseUrl);
       this.sseConnections[task.id] = eventSource; // Store connection
 
       eventSource.onmessage = (event) => {
+        // console.log(`[SSE_RAW_DATA] TaskID ${task.id}:`, event.data); // New log for raw data
         try {
           const data = JSON.parse(event.data);
           this._handleSSEMessage(task.id, data);
         } catch (e) {
-          console.error(`Error parsing SSE message for task ${task.id}:`, e, event.data);
+          // console.error(`[SSE_PARSE_ERROR] TaskID ${task.id}: Failed to parse SSE data. Error:`, e, "Raw data:", event.data);
         }
       };
 
       eventSource.onerror = (err) => {
-        console.error(`EventSource failed for task ${task.id} (uploadId: ${task.uploadId}):`, err);
+        // console.error(`EventSource failed for task ${task.id} (uploadId: ${task.uploadId}):`, err);
         // Don't close connection here, server might have already done so or it's a temp network issue.
         // If server closes, 'completed' or 'failed' message should handle it.
         // If it's a persistent error, task might remain in 'uploading' or be marked 'failed' by a timeout mechanism (not yet implemented).
@@ -448,7 +516,7 @@ export const useUploadStore = defineStore('upload', {
         // Note: The `finally` block of the main processing loop will handle decrementing concurrency counters.
         // The EventSource connection will remain open until the server closes it or sends a final message.
       } catch (error) {
-          console.error(`API call failed for task ${task.id}:`, error);
+          // console.error(`API call failed for task ${task.id}:`, error);
           // _handleSSEMessage will call _finalizeTask, which handles counters and SSE connection cleanup.
           this._handleSSEMessage(task.id, { status: 'failed', error: i18n.global.t('error.apiCallError', { message: error.message }) });
           // No need to manually close SSE here, _finalizeTask will do it.
@@ -474,6 +542,7 @@ export const useUploadStore = defineStore('upload', {
           i--; 
           continue;
         }
+        // console.log(`[UPLOAD_STORE_DEBUG] processUploadQueue checking task: ID=${task.id}, Name=${task.name}, Status=${task.status}, UploadType=${task.uploadType}`);
         
         if (task.status !== 'queued') {
           console.warn(`Task ${task.id} (${task.name}) is in queue but status is ${task.status}. Skipping.`);
@@ -523,7 +592,7 @@ export const useUploadStore = defineStore('upload', {
                 // Given _performActualUpload is async and has its own try/catch that calls _handleSSEMessage -> _finalizeTask,
                 // this specific catch block in processUploadQueue might become less critical for counter management,
                 // as _finalizeTask should handle it. However, it's a good safety net.
-                console.error(`Error during initial call to _performActualUpload for ${task.name}:`, error);
+                // console.error(`Error during initial call to _performActualUpload for ${task.name}:`, error);
                 
                 // Directly ensure task is failed and finalized if _performActualUpload itself errors out early.
                 // This is a fallback. Ideally, errors within _performActualUpload are caught there.

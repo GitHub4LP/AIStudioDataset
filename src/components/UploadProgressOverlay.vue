@@ -150,9 +150,12 @@ watch(() => uploadStore.allTasksSorted, (newTasks) => {
   if (newTasks) {
     newTasks.forEach(task => {
       if (task.type === 'folder' && task.subTasks && task.subTasks.length > 0) {
-        console.debug(`UploadProgressOverlay: Folder Task '${task.name}' (ID: ${task.id}) is about to render with subTasks:`, JSON.parse(JSON.stringify(task.subTasks)));
+        // console.debug(`UploadProgressOverlay: Folder Task '${task.name}' (ID: ${task.id}) is about to render with subTasks:`, JSON.parse(JSON.stringify(task.subTasks))); // Original debug
+        task.subTasks.forEach(sub => {
+            // console.log(`[UI_DEBUG] Rendering subTask for folder '${task.name}'. SubTask Name: '${sub.name}', SubTask ID: ${sub.id}, SubTask Status: ${sub.status}`);
+        });
       } else if (task.type === 'folder' && (!task.subTasks || task.subTasks.length === 0)) {
-        console.debug(`UploadProgressOverlay: Folder Task '${task.name}' (ID: ${task.id}) has no subTasks or subTasks array is empty.`);
+        // console.debug(`UploadProgressOverlay: Folder Task '${task.name}' (ID: ${task.id}) has no subTasks or subTasks array is empty.`); // Original debug
       }
     });
   }

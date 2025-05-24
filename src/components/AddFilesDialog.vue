@@ -301,106 +301,127 @@ const handleAddSelectedItems = async () => {
   const batchTaskId = uuidv4();
   const isSingleItem = selectedServerItems.value.length === 1;
   const firstItem = selectedServerItems.value[0];
-  const isFolderOperation = !isSingleItem || firstItem.type === '文件夹';
+  const isSingleFolderSelected = isSingleItem && firstItem.type === '文件夹';
 
-  const uploadType = isFolderOperation ? 'server-folder' : 'server-file';
-  const batchTaskName = isSingleItem ? firstItem.name : t('file.addMultipleItems', { count: selectedServerItems.value.length }); // New i18n key
+  let taskDetails;
 
-  uploadStore.addTask({
-    id: batchTaskId,
-    name: batchTaskName,
-    type: isFolderOperation ? 'folder' : 'file',
-    uploadType: uploadType,
-    targetDatasetId: props.datasetId,
-    targetDatasetName: props.datasetName || targetDatasetDetails.value.label,
-    status: 'processing', // Start as processing
-    progress: 0,
-    itemCount: totalItemsToProcess.value, // This might be total top-level items, sub-task count will be dynamic
-  });
+  if (isSingleFolderSelected) {
+    taskDetails = {
+      id: batchTaskId,
+      name: firstItem.name,
+      type: 'folder',
+      uploadType: 'server-folder',
+      targetDatasetId: props.datasetId,
+      targetDatasetName: props.datasetName || targetDatasetDetails.value.label,
+      serverFilePath: firstItem.path, // CRUCIAL
+      itemCount: 1, 
+      // status will be set to 'queued' by uploadStore.addTask
+    };
+  } else {
+    const batchTaskName = isSingleItem ? firstItem.name : t('file.addMultipleItems', { count: selectedServerItems.value.length });
+    const isEffectivelyFolderOperation = !isSingleItem || (isSingleItem && firstItem.type === '文件夹');
+    
+    taskDetails = {
+      id: batchTaskId,
+      name: batchTaskName,
+      type: isEffectivelyFolderOperation ? 'folder' : 'file',
+      uploadType: isEffectivelyFolderOperation ? 'server-folder' : 'server-file',
+      targetDatasetId: props.datasetId,
+      targetDatasetName: props.datasetName || targetDatasetDetails.value.label,
+      itemCount: totalItemsToProcess.value,
+      // status will be set to 'queued' by uploadStore.addTask
+    };
 
-  const allRegisteredFilesForDatasetUpdate = []; // Files to update dataset metadata
+    if (isSingleItem && firstItem.type !== '文件夹') { // Single server file
+      taskDetails.serverFilePath = firstItem.path;
+      taskDetails.uploadType = 'server-file';
+      taskDetails.type = 'file';
+    }
+  }
+  
+  uploadStore.addTask(taskDetails);
+
+  const allRegisteredFilesForDatasetUpdate = []; 
   let overallBatchSuccess = true;
 
   try {
-    for (const item of selectedServerItems.value) {
-      let currentSubTaskId = null;
-      if (uploadType === 'server-folder' && item.type === '文件') { // Individual file within a multi-selection or folder
-         currentSubTaskId = uploadStore.addSubTask(batchTaskId, {
-            name: item.name,
-            type: 'file',
-            status: 'processing',
-            progress: 0,
-            uploadType: 'server-file', // Each item is a server-file registration
-         });
-      } else if (uploadType === 'server-folder' && item.type === '文件夹') {
-         // For a selected folder, we create a sub-task representing the folder itself.
-         // The actual files inside will be handled by the backend `registerServerFile` if it expands folders.
-         // If `registerServerFile` only handles one file at a time, this part needs more complex client-side folder traversal.
-         // Assuming `registerServerFile` can take a folder path and register its contents or the folder itself.
-         currentSubTaskId = uploadStore.addSubTask(batchTaskId, {
-            name: item.name,
-            type: 'folder', // This sub-task represents a folder being registered
-            status: 'processing',
-            progress: 0,
-            uploadType: 'server-folder',
-         });
-      }
-
-      const payload = {
-        filePath: item.path,
-        fileName: item.name,
-        folderPath: props.basePathInDataset, // This is the target base path in dataset
-        uploadId: currentSubTaskId || batchTaskId, // 添加 uploadId
-      };
-
-      // If it's a single 'server-file' upload, batchTaskId is the main task ID.
-
-      try {
-        const registrationResults = await apiRegisterServerFile(payload); // This API call might return a single object or an array
-
-        // Normalize results to always be an array
-        const resultsArray = Array.isArray(registrationResults) ? registrationResults : [registrationResults];
-
-        for (const result of resultsArray) {
-          if (result.success && result.fileId) {
-            allRegisteredFilesForDatasetUpdate.push({ fileId: result.fileId, fileAbs: result.fileAbs, name: result.fileName });
-            if (currentSubTaskId) { // If it's a sub-task (part of a folder or multi-selection)
-              uploadStore.updateSubTaskStatus(batchTaskId, currentSubTaskId, 'completed', 100, null, { fileId: result.fileId, fileAbs: result.fileAbs });
-            } else if (uploadType === 'server-file') { // Single server-file upload
-              uploadStore.updateTaskStatus(batchTaskId, 'completed', 100, null, { fileId: result.fileId, fileAbs: result.fileAbs });
+    if (isSingleFolderSelected) {
+      // For a single server folder, the main task (batchTaskId) has been added with serverFilePath.
+      // The backend (via _performActualUpload in uploadStore) will handle listing files and sending SSEs.
+      // So, we skip the apiRegisterServerFile loop here.
+      // We assume the uploadStore will update the task status based on SSE.
+      overallBatchSuccess = true; // Placeholder: actual success determined by SSE via uploadStore.
+                                  // UI should reflect progress based on SSE updates to the main task (batchTaskId).
+                                  // No files are directly registered here by the dialog for this path.
+    } else {
+      // Existing loop for apiRegisterServerFile for other cases (e.g., multiple server files, or single server file)
+      for (const item of selectedServerItems.value) {
+        let currentSubTaskId = null;
+        // Determine if a sub-task is needed based on the main task's type.
+        if (taskDetails.type === 'folder') { // If the main task is a 'folder' (e.g., multi-selection)
+           currentSubTaskId = uploadStore.addSubTask(batchTaskId, {
+              name: item.name,
+              type: 'file', // Sub-tasks for server items are files for registration purposes
+              status: 'processing', 
+              progress: 0,
+              uploadType: 'server-file', // Each item registration is a 'server-file' type action
+           });
+        }
+  
+        const payload = {
+          filePath: item.path,
+          fileName: item.name,
+          folderPath: props.basePathInDataset, 
+          uploadId: currentSubTaskId || batchTaskId, 
+        };
+  
+        try {
+          const registrationResults = await apiRegisterServerFile(payload); 
+          const resultsArray = Array.isArray(registrationResults) ? registrationResults : [registrationResults];
+  
+          for (const result of resultsArray) {
+            if (result.success && result.fileId) {
+              allRegisteredFilesForDatasetUpdate.push({ fileId: result.fileId, fileAbs: result.fileAbs, name: result.fileName });
+              if (currentSubTaskId) { 
+                uploadStore.updateSubTaskStatus(batchTaskId, currentSubTaskId, 'completed', 100, null, { fileId: result.fileId, fileAbs: result.fileAbs });
+              } else if (taskDetails.uploadType === 'server-file') { // Single server-file main task
+                uploadStore.updateTaskStatus(batchTaskId, 'completed', 100, null, { fileId: result.fileId, fileAbs: result.fileAbs });
+              }
+            } else {
+              overallBatchSuccess = false;
+              const errorMsg = result.error || t('error.operationFailed');
+              if (currentSubTaskId) {
+                uploadStore.updateSubTaskStatus(batchTaskId, currentSubTaskId, 'failed', 0, errorMsg);
+              } else if (taskDetails.uploadType === 'server-file') {
+                uploadStore.updateTaskStatus(batchTaskId, 'failed', 0, errorMsg);
+              }
+              ElMessage.error(t('file.registrationFailed', { name: item.name, error: errorMsg })); 
             }
-          } else {
-            overallBatchSuccess = false;
-            const errorMsg = result.error || t('error.operationFailed');
-            if (currentSubTaskId) {
-              uploadStore.updateSubTaskStatus(batchTaskId, currentSubTaskId, 'failed', 0, errorMsg);
-            } else if (uploadType === 'server-file') {
-              uploadStore.updateTaskStatus(batchTaskId, 'failed', 0, errorMsg);
-            }
-            ElMessage.error(t('file.registrationFailed', { name: item.name, error: errorMsg })); // New i18n key
           }
+        } catch (error) { 
+          overallBatchSuccess = false;
+          const errorMsg = error.message || t('error.operationFailed');
+          if (currentSubTaskId) {
+            uploadStore.updateSubTaskStatus(batchTaskId, currentSubTaskId, 'failed', 0, errorMsg);
+          } else if (taskDetails.uploadType === 'server-file') {
+            uploadStore.updateTaskStatus(batchTaskId, 'failed', 0, errorMsg);
+          }
+          ElMessage.error(t('file.registrationFailed', { name: item.name, error: errorMsg }));
         }
-      } catch (error) { // Catch error for individual item registration
-        overallBatchSuccess = false;
-        const errorMsg = error.message || t('error.operationFailed');
-        if (currentSubTaskId) {
-          uploadStore.updateSubTaskStatus(batchTaskId, currentSubTaskId, 'failed', 0, errorMsg);
-        } else if (uploadType === 'server-file') {
-          uploadStore.updateTaskStatus(batchTaskId, 'failed', 0, errorMsg);
+        itemsProcessedCount.value++;
+        
+        if (taskDetails.type === 'file') { // For single file main task, update its own progress
+           const task = uploadStore.tasks.find(t=>t.id === batchTaskId);
+           if(task && task.status === 'processing') { 
+              task.progress = Math.round((itemsProcessedCount.value / totalItemsToProcess.value) * 100);
+           }
         }
-        ElMessage.error(t('file.registrationFailed', { name: item.name, error: errorMsg }));
+        // For folder main tasks, progress is derived from subtasks in uploadStore.
       }
-      itemsProcessedCount.value++;
-      // Main task progress update is now handled by sub-task logic in uploadStore for folders
-      if (uploadType === 'server-file') { // For single file, update its own progress if not completed/failed
-         const task = uploadStore.tasks.find(t=>t.id === batchTaskId);
-         if(task && task.status === 'processing') { // only if still processing
-            task.progress = Math.round((itemsProcessedCount.value / totalItemsToProcess.value) * 100);
-         }
-      }
-    }
+    } // End of else for !isSingleFolderSelected
 
-    // After all items are processed, update dataset metadata
+    // After all items are processed (or skipped for single server folder)
+    // This block will only run if files were registered by the loop above.
     if (allRegisteredFilesForDatasetUpdate.length > 0) {
       try {
         await datasetStore.addFilesToDataset({
