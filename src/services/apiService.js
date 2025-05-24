@@ -1,4 +1,19 @@
-const API_BASE_URL = '/api'; // Assuming your backend is served from the same domain
+// Resolve the application's base path.
+// import.meta.env.BASE_URL is set by Vite based on the 'base' config in vite.config.js.
+// It includes leading and trailing slashes if specified (e.g., '/subpath/').
+// If base is './' (for root deployment), BASE_URL will be './'.
+let appBase = import.meta.env.BASE_URL;
+
+// If appBase is './' or '/', the API path starts directly from the root.
+// For a subpath (e.g., '/mysubpath/'), appBase will be that subpath.
+if (appBase === './' || appBase === '/') {
+  appBase = ''; // API path will be just '/api'
+} else {
+  // Remove trailing slash from appBase if it exists, to prevent double slashes like /subpath//api
+  appBase = appBase.replace(/\/$/, '');
+}
+
+const API_BASE_URL = `${appBase}/api`; // Construct the final API base URL
 
 /**
  * Handles the response from a fetch call.

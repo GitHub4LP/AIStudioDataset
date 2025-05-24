@@ -10,7 +10,7 @@ const routes = [
 ]
 
 const router = createRouter({
-  history: createWebHistory(), // 移除 './'，让 Vite 的 base 配置来处理
+  history: createWebHistory(import.meta.env.BASE_URL), // Use Vite's base URL for router history
   routes
 })
 
