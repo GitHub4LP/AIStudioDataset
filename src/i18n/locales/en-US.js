@@ -107,7 +107,16 @@ export default {
     nodeId: 'Node ID',
     emptyFolder: 'This folder is empty',
     fullPath: 'Full Path',
-    unknownSize: 'Unknown Size'
+    unknownSize: 'Unknown Size',
+    dropInstruction: "Drop files here or into a dataset/folder in the tree.",
+    dropTargetInvalid: "Invalid drop target. Please drop into a dataset or folder.",
+    noValidFilesDropped: "No valid files were found in the dropped items.",
+    folderDropInfo: "For folders, files directly inside will be processed. For nested structures, please use the 'Select Folder' button in the upload dialog.",
+    noFilesDropped: "No files were dropped.",
+    dropError: "Error processing dropped files.",
+    addMultipleItems: "Add {count} items",
+    registrationFailed: "Registration failed for {name}: {error}",
+    noActualFilesRegistered: "Operation completed, but no new files were registered (e.g., empty folders or already existing items)."
   },
   dataset: {
     name: 'Dataset',
@@ -227,6 +236,11 @@ export default {
     targetPath: 'Target Path (in dataset)',
     selectFilesOrFolder: 'Select Files or Folder',
     dragOrClick: 'Drag files here or click to select',
+    showOverlayTip: 'Show Upload Progress',
+    hideOverlayTip: 'Hide Upload Progress',
+    closeOverlayTip: 'Close Upload Progress Overlay',
+    minimize: 'Minimize',
+    maximize: 'Maximize',
     selectFolder: 'Select Folder',
     filesToUpload: 'Files to Upload ({count})',
     relativePath: 'Relative Path (in folder)',
@@ -234,7 +248,10 @@ export default {
     startUpload: 'Start Upload',
     selectFilesFirst: 'Please select files to upload',
     multiFileUpload: 'Multi-file Upload to {name}',
-    fileUpload: 'File Upload to {name}'
+    fileUpload: 'File Upload to {name}',
+    target: 'Target',
+    noFilesProcessed: 'No files were processed successfully.',
+    batchFailed: 'Batch upload failed or partially failed.'
   },
   theme: {
     switchTheme: 'Switch Theme',

@@ -30,6 +30,10 @@
             :empty-text="t('dataset.empty')"
             @node-click="handleDatasetTreeNodeClick"
             @node-contextmenu="handleNodeContextMenu"
+            :draggable="false" 
+            @node-drop="handleNodeDrop"
+            @dragover.prevent
+            @dragenter.prevent
           >
             <template #default="{ node, data }">
               <span class="tree-node-custom">
@@ -65,162 +69,6 @@
               </span>
             </template>
           </el-tree>
-        </el-collapse-item>
-        <el-collapse-item :title="t('file.source')" name="fileSources">
-          <el-tabs v-model="activeFileSourceTab" @tab-change="handleFileSourceTabChange">
-            <el-tab-pane :label="t('file.server')" name="server">
-              <div class="server-file-browser">
-                <div class="path-selector">
-                  <el-select 
-                      v-model="fileBrowserStore.selectedBasePath" 
-                      :placeholder="t('file.selectBasePath')" 
-                      @change="fileBrowserStore.changeBasePath" 
-                      size="small"
-                  >
-                    <el-option
-                      v-for="pathItem in fileBrowserStore.basePaths"
-                      :key="pathItem.value"
-                      :label="pathItem.label"
-                      :value="pathItem.value"
-                    />
-                  </el-select>
-                </div>
-                <div class="path-navigation">
-                  <el-breadcrumb separator="/">
-                    <el-breadcrumb-item
-                      v-for="(item, index) in fileBrowserStore.pathSegments"
-                      :key="index"
-                      @click="handleServerPathSegmentClick(index)"
-                    >
-                      {{ item }}
-                    </el-breadcrumb-item>
-                  </el-breadcrumb>
-                </div>
-
-                <div v-if="fileBrowserStore.isLoading" class="loading-state">
-                  <el-skeleton :rows="3" animated />
-                </div>
-                 <div v-else-if="fileBrowserStore.error" class="dataset-error-message">
-                    {{ t('file.getFileListFailed') }}: {{ fileBrowserStore.error }}
-                 </div>
-                <el-table
-                  v-else-if="fileBrowserStore.serverFiles.length > 0"
-                  :data="fileBrowserStore.serverFiles"
-                  style="width: 100%"
-                  height="200px" 
-                  size="small"
-                  :show-header="false"
-                  row-class-name="file-table-row"
-                  :empty-text="t('file.empty')"
-                  @selection-change="handleNewDatasetServerFileSelectionChange"
-                  ref="serverFileSelectionTableRef"
-                >
-                  <el-table-column type="selection" width="45" :selectable="isServerFileSelectableForNewDataset" />
-                  <el-table-column prop="name" :label="t('file.name')">
-                    <template #default="{ row }">
-                      <div class="file-name" @click="handleServerFileOrFolderClick(row)">
-                        <el-icon v-if="row.type === '文件夹'"><Folder /></el-icon>
-                        <el-icon v-else><Document /></el-icon>
-                        <span>{{ row.name }}</span>
-                      </div>
-                    </template>
-                  </el-table-column>
-                </el-table>
-                <div v-else class="empty-state">
-                  <el-empty :description="t('file.empty')" :image-size="50" />
-                </div>
-              </div>
-            </el-tab-pane>
-            <el-tab-pane :label="t('file.local')" name="local">
-              <div class="local-file-source-tab">
-                <el-upload
-                  ref="localFileUploaderRef"
-                  action="#" 
-                  :http-request="customLocalUploadRequest"
-                  :on-change="handleLocalFileSelectionChange"
-                  :on-remove="handleLocalFileRemoveFromDisplay"
-                  :file-list="localFileDisplayList"
-                  :multiple="true"
-                  :auto-upload="true" 
-                  drag
-                  class="local-file-uploader"
-                >
-                  <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
-                  <div class="el-upload__text">{{ t('file.dragOrClick') }}</div>
-                  <template #tip>
-                    <div class="el-upload__tip">
-                      {{ t('file.autoAddTip') }}
-                    </div>
-                  </template>
-                </el-upload>
-                <el-button @click="triggerLocalFolderInput" size="small" style="margin-top: 10px;">{{ t('file.selectFolder') }}</el-button>
-                <input 
-                  type="file" 
-                  webkitdirectory 
-                  multiple 
-                  style="display: none" 
-                  ref="localFolderInputRef" 
-                  @change="handleLocalFolderInputChange" 
-                />
-              </div>
-            </el-tab-pane>
-            <el-tab-pane :label="t('file.urlFetch')" name="url">
-              <div class="url-fetch-source-tab">
-                <el-form :model="urlFetchForm" ref="urlFetchFormRef" label-width="80px" size="small">
-                  <el-form-item :label="t('file.url')" prop="url" :rules="[{ required: true, message: t('file.urlRequired'), trigger: 'blur' }, { type: 'url', message: t('file.urlInvalid'), trigger: ['blur', 'change'] }]">
-                    <el-input v-model="urlFetchForm.url" :placeholder="t('file.urlPlaceholder')"></el-input>
-                  </el-form-item>
-                  <el-form-item :label="t('file.name')" prop="fileName" :rules="[{ required: true, message: t('file.nameRequired'), trigger: 'blur' }]">
-                    <el-input v-model="urlFetchForm.fileName" :placeholder="t('file.namePlaceholder')"></el-input>
-                  </el-form-item>
-                  <el-form-item :label="t('file.referer')" prop="referer">
-                    <el-input v-model="urlFetchForm.referer" :placeholder="t('file.optional')"></el-input>
-                  </el-form-item>
-                  <el-form-item :label="t('file.userAgent')" prop="userAgent">
-                    <el-input v-model="urlFetchForm.userAgent" :placeholder="t('file.optional')"></el-input>
-                  </el-form-item>
-                  <el-form-item>
-                    <el-button 
-                      type="primary" 
-                      @click="handleUrlFetchAndAddToList" 
-                      :loading="isProcessingUrlFile"
-                      style="width: 100%;"
-                    >
-                      {{ isProcessingUrlFile ? t('file.fetching') : t('file.fetchAndAdd') }}
-                    </el-button>
-                  </el-form-item>
-                </el-form>
-              </div>
-            </el-tab-pane>
-          </el-tabs>
-
-          <div v-if="allSelectedFilesForNewDataset.length > 0" class="selected-files-panel-for-new-dataset">
-            <h4>{{ t('file.selectedFiles') }}:</h4>
-            <el-table :data="allSelectedFilesForNewDataset" size="small" height="120px" :key="allSelectedFilesForNewDataset.length">
-              <el-table-column prop="name" :label="t('file.name')" />
-              <el-table-column prop="source" :label="t('file.source')" width="100" />
-              <el-table-column :label="t('file.operation')" width="60">
-                <template #default="{ row }">
-                  <el-button link type="danger" size="small" @click="removeFileFromNewDatasetSelection(row)">
-                    <el-icon><Delete /></el-icon>
-                  </el-button>
-                </template>
-              </el-table-column>
-            </el-table>
-          </div>
-
-          <div class="create-dataset-action-panel">
-            <el-button 
-              type="primary" 
-              @click="handleOpenCreateDatasetDialog" 
-              :disabled="isProcessingNewDatasetFiles || isProcessingLocalFiles || isProcessingUrlFile"
-              :loading="isProcessingNewDatasetFiles || isProcessingLocalFiles || isProcessingUrlFile"
-              style="width: 100%; margin-top: 10px;"
-            >
-              {{ overallProcessingButtonText }}
-            </el-button>
-          </div>
-
         </el-collapse-item>
       </el-collapse>
 
@@ -262,8 +110,10 @@
       :dataset-id="targetDatasetIdForUpload"
       :dataset-name="targetDatasetNameForUpload"
       :base-path-in-dataset="targetBasePathInDataset"
+      :initial-files="droppedFilesForDialog"
       @update:visible="uploadLocalFilesDialogVisible = $event"
       @files-added="handleLocalFilesUploaded"
+      @initial-files-processed="clearDroppedFiles"
     />
     <AddFilesDialog
       :visible="addServerItemsDialogVisible"
@@ -310,40 +160,9 @@ const uiStore = useUIStore();
 const fileBrowserStore = useFileBrowserStore();
 const { t } = useI18n()
 
-const activeCollapseNames = ref(['datasets', 'fileSources']);
-const activeFileSourceTab = ref('server');
+const activeCollapseNames = ref(['datasets']);
 const datasetTreeProps = { label: 'label', children: 'children', isLeaf: 'isFileNode' }; 
-const serverFileSelectionTableRef = ref(null);
-const localFileUploaderRef = ref(null);
-const localFolderInputRef = ref(null);
-const localFileDisplayList = ref([]); 
-
-// --- State for New Dataset Creation (with files) ---
-const newDatasetSelectedServerFiles = ref([]); 
-const newDatasetSelectedLocalFiles = ref([]); 
-const newDatasetSelectedUrlFiles = ref([]); 
-
-const allSelectedFilesForNewDataset = computed(() => [
-    ...newDatasetSelectedServerFiles.value.map(f => ({ ...f, name: f.name, source: '服务器', uniqueId: `server-${f.path}` })),
-    ...newDatasetSelectedLocalFiles.value, 
-    ...newDatasetSelectedUrlFiles.value, 
-]);
-
-const createDatasetDialogVisible = ref(false); 
-const isProcessingNewDatasetFiles = ref(false); 
-const isProcessingLocalFiles = ref(false); 
-const isProcessingUrlFile = ref(false); 
-const processedFilesForDialog = ref([]); 
-
-const overallProcessingButtonText = computed(() => {
-    if (isProcessingNewDatasetFiles.value) return t('file.processingServerFiles');
-    if (isProcessingLocalFiles.value) return t('file.processingLocalFiles');
-    if (isProcessingUrlFile.value) return t('file.processingUrlFiles');
-    return t('file.createDataset');
-});
-
-const urlFetchFormRef = ref(null);
-const urlFetchForm = ref({ url: '', fileName: '', referer: '', userAgent: '' });
+const droppedFilesForDialog = ref([]);
 
 // --- State for New Empty Dataset Creation ---
 const createEmptyDatasetDialogVisible = ref(false);
@@ -625,194 +444,144 @@ const handleEmptyDatasetCreated = () => {
   createEmptyDatasetDialogVisible.value = false;
 };
 
+const clearDroppedFiles = () => {
+  droppedFilesForDialog.value = [];
+};
 
-// --- File Sources Section Logic (for creating dataset with files) ---
-const handleServerFileOrFolderClick = (item) => { 
-    closeContextMenu();
-    if (item.type === '文件夹') {
-        let newPath = item.name; 
-        if (fileBrowserStore.currentPath && fileBrowserStore.currentPath !== '.') {
-            newPath = `${fileBrowserStore.currentPath}/${item.name}`;
-        }
-        fileBrowserStore.fetchFiles(newPath); 
+const handleNodeDrop = async (draggingNode, dropNode, dropType, event) => {
+  event.preventDefault();
+  closeContextMenu();
+
+  const targetNodeData = dropNode.data;
+  if (!dropNode || !targetNodeData || targetNodeData.type === 'file') {
+    if (dropType !== 'inner') {
+        ElMessage.info(t('file.dropInstruction'));
+        return;
     }
+    ElMessage.warning(t('file.dropTargetInvalid'));
+    return;
+  }
+
+  // Set target for upload dialogs
+  targetDatasetIdForUpload.value = String(targetNodeData.type === 'dataset' ? targetNodeData.id : targetNodeData.datasetId);
+  const parentDataset = datasetStore.getDatasetById(targetDatasetIdForUpload.value);
+  targetDatasetNameForUpload.value = parentDataset ? parentDataset.label : String(targetDatasetIdForUpload.value);
+  targetBasePathInDataset.value = targetNodeData.type === 'folder' ? normalizePath(targetNodeData.path) : '';
+  
+  // --- Groundwork for Server File Drag-and-Drop ---
+  const isServerFileDrop = event.dataTransfer.types.includes('application/x-server-file-item');
+  if (isServerFileDrop) {
+    const serverItemDataString = event.dataTransfer.getData('application/x-server-file-item');
+    try {
+      const serverItem = JSON.parse(serverItemDataString);
+      // serverItem should be like { path: '/path/on/server/file.txt', name: 'file.txt', type: 'file' or 'folder' }
+      console.log('Server file drop detected (conceptual):', serverItem);
+      ElMessage.info(`Server Item Drop: ${serverItem.name}. Type: ${serverItem.type}. Path: ${serverItem.path}. (Feature in development)`);
+      
+      // Future: Instead of just logging, this would trigger a confirmation and then
+      // use apiService.uploadServerFileToDataset(...) or similar,
+      // passing targetDatasetIdForUpload, targetBasePathInDataset, serverItem.path, serverItem.name, etc.
+      // This would likely reuse or adapt parts of AddFilesDialog's logic for server files.
+    } catch (e) {
+      console.error("Error parsing server file drop data:", e);
+      ElMessage.error("Invalid server file drop data.");
+    }
+    return; // Stop further processing if it's a server file drop
+  }
+  // --- End Groundwork for Server File Drag-and-Drop ---
+
+  const items = event.dataTransfer.items;
+  const filesToAdd = []; // Only used for the fallback event.dataTransfer.files
+  const filePromises = [];
+
+  if (items && items.length > 0 && Array.from(items).some(item => item.kind === 'file')) {
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.kind === 'file') {
+        const entry = item.webkitGetAsEntry();
+        if (entry) {
+          if (entry.isFile) {
+            filePromises.push(new Promise((resolve, reject) => {
+              entry.file(file => {
+                if (!file.webkitRelativePath) {
+                   Object.defineProperty(file, 'webkitRelativePath', { value: '', configurable: true, writable: true });
+                }
+                resolve(file);
+              }, reject);
+            }));
+          } else if (entry.isDirectory) {
+            const dirReader = entry.createReader();
+            filePromises.push(new Promise((resolveDirectory, rejectDirectory) => {
+              dirReader.readEntries(async (dirEntries) => {
+                const innerFilePromises = [];
+                for (const innerEntry of dirEntries) {
+                  if (innerEntry.isFile) {
+                    innerFilePromises.push(new Promise((resolveFile, rejectFile) => {
+                      innerEntry.file(file => {
+                        Object.defineProperty(file, 'webkitRelativePath', { value: `${entry.name}/${file.name}`, configurable: true, writable: true });
+                        resolveFile(file);
+                      }, rejectFile);
+                    }));
+                  }
+                }
+                try {
+                    const filesFromDir = await Promise.all(innerFilePromises);
+                    resolveDirectory(filesFromDir); 
+                } catch (error) {
+                    rejectDirectory(error);
+                }
+              }, rejectDirectory);
+            }));
+          }
+        }
+      }
+    }
+
+    Promise.all(filePromises.map(p => p.catch(e => {
+        console.error("Error processing a dropped item:", e);
+        return { error: true, details: e };
+    })))
+    .then(results => {
+        const allFiles = results.flat().filter(file => file && !file.error);
+        if (allFiles.length > 0) {
+            droppedFilesForDialog.value = allFiles;
+            uploadLocalFilesDialogVisible.value = true;
+        } else if (items.length > 0 && allFiles.length === 0) {
+            ElMessage.warning(t('file.noValidFilesDropped'));
+        } else { // No items of kind 'file' or other issue
+             ElMessage.warning(t('file.noFilesDropped'));
+        }
+    }).catch(err => {
+        console.error('Error processing dropped files:', err);
+        ElMessage.error(t('file.dropError'));
+    });
+
+  } else if (event.dataTransfer.files && event.dataTransfer.files.length > 0) {
+    // Fallback for event.dataTransfer.files (less reliable for folders)
+    for (let i = 0; i < event.dataTransfer.files.length; i++) {
+        const file = event.dataTransfer.files[i];
+        // For this fallback, webkitRelativePath is usually not available or just the filename
+        // Best effort: use filename if webkitRelativePath is empty
+        const relativePath = file.webkitRelativePath || file.name; 
+        Object.defineProperty(file, 'webkitRelativePath', { value: relativePath, configurable: true, writable: true });
+        filesToAdd.push(file);
+    }
+    if (filesToAdd.length > 0) {
+        droppedFilesForDialog.value = filesToAdd;
+        uploadLocalFilesDialogVisible.value = true;
+    } else {
+         ElMessage.warning(t('file.noFilesDropped'));
+    }
+  } else {
+    // Neither items nor files found, or items found but none are 'file' kind.
+    ElMessage.warning(t('file.noFilesDropped'));
+  }
 };
 
-const isServerFileSelectableForNewDataset = (row) => row.type === '文件'; 
-const handleNewDatasetServerFileSelectionChange = (selection) => { 
-    newDatasetSelectedServerFiles.value = selection.map(s => ({
-        ...s, 
-        path: fileBrowserStore.currentPath === '.' ? s.name : `${fileBrowserStore.currentPath}/${s.name}` 
-    }));
-};
 
+// handleServerPathSegmentClick might be used by AddFilesDialog, will keep for now
 const handleServerPathSegmentClick = (index) => {
   fileBrowserStore.navigateToPathSegment(index);
-};
-
-const handleLocalFileSelectionChange = (file, fileList) => {
-    localFileDisplayList.value = fileList;
-};
-const handleLocalFileRemoveFromDisplay = (file, fileList) => {
-    localFileDisplayList.value = fileList;
-    newDatasetSelectedLocalFiles.value = newDatasetSelectedLocalFiles.value.filter(f => f.uid !== file.uid);
-};
-
-const customLocalUploadRequest = async ({ file }) => { 
-    isProcessingLocalFiles.value = true;
-    try {
-        const formData = new FormData();
-        formData.append('file', file); 
-        
-        const result = await apiService.uploadLocalFile(formData); 
-        newDatasetSelectedLocalFiles.value.push({
-            fileId: result.fileId, 
-            fileAbs: result.fileAbs, 
-            name: file.name, 
-            uid: file.uid, 
-            source: t('file.local'),
-            uniqueId: `local-${file.name}-${file.size}-${result.fileId || Date.now()}` 
-        });
-        ElMessage.success(t('file.fileProcessSuccess', { name: file.name }));
-        localFileDisplayList.value = localFileDisplayList.value.filter(f => f.uid !== file.uid);
-    } catch (error) {
-        console.error('Error processing local file:', error);
-        ElMessage.error(t('file.fileProcessFailed', { name: file.name, error: error.message || t('error.operationFailed') }));
-        localFileDisplayList.value = localFileDisplayList.value.filter(f => f.uid !== file.uid); 
-    } finally {
-        isProcessingLocalFiles.value = false; 
-    }
-};
-
-const triggerLocalFolderInput = () => { localFolderInputRef.value?.click(); };
-
-const handleLocalFolderInputChange = async (event) => { 
-    const files = event.target.files;
-    if (!files || files.length === 0) return;
-    isProcessingLocalFiles.value = true;
-    let successCount = 0;
-    const filesToProcess = Array.from(files); 
-
-    for (const file of filesToProcess) {
-        try {
-            const formData = new FormData();
-            formData.append('file', file); 
-            const result = await apiService.uploadLocalFile(formData);
-            newDatasetSelectedLocalFiles.value.push({
-                fileId: result.fileId,
-                fileAbs: result.fileAbs, 
-                name: file.name, 
-                source: t('file.local'),
-                uniqueId: `local-folder-${file.webkitRelativePath || file.name}-${result.fileId || Date.now()}`
-            });
-            successCount++;
-        } catch (error) {
-            console.error(`Error processing folder file ${file.name}:`, error);
-            ElMessage.error(t('file.fileProcessFailed', { name: file.name, error: error.message || t('error.operationFailed') }));
-        }
-    }
-    if (successCount > 0) ElMessage.success(t('file.folderFilesProcessed', { count: successCount }));
-    if (successCount !== filesToProcess.length) ElMessage.warning(t('file.folderFilesPartialFailed'));
-    
-    if(localFolderInputRef.value) localFolderInputRef.value.value = ''; 
-    isProcessingLocalFiles.value = false;
-};
-
-const handleUrlFetchAndAddToList = async () => {
-    if (!urlFetchFormRef.value) return;
-    urlFetchFormRef.value.validate(async (valid) => {
-        if (valid) {
-            isProcessingUrlFile.value = true;
-            try {
-                const result = await apiService.fetchUrlToDataset({ 
-                    url: urlFetchForm.value.url,
-                    fileName: urlFetchForm.value.fileName, 
-                    referer: urlFetchForm.value.referer,
-                    userAgent: urlFetchForm.value.userAgent,
-                }); 
-                newDatasetSelectedUrlFiles.value.push({
-                    fileId: result.fileId,
-                    fileAbs: result.fileAbs, 
-                    name: urlFetchForm.value.fileName, 
-                    source: t('file.urlFetch'),
-                    uniqueId: `url-${result.fileId || urlFetchForm.value.fileName}` 
-                });
-                ElMessage.success(t('file.urlFileSuccess', { name: urlFetchForm.value.fileName }));
-                urlFetchFormRef.value.resetFields();
-            } catch (error) {
-                console.error('Error fetching URL file:', error);
-                ElMessage.error(t('file.urlFileFailed', { error: error.message || t('error.operationFailed') }));
-            } finally {
-                isProcessingUrlFile.value = false;
-            }
-        } else {
-            ElMessage.error(t('file.checkUrlForm'));
-            return false;
-        }
-    });
-};
-
-const handleFileSourceTabChange = (tabName) => {
-    if (tabName === 'server' && fileBrowserStore.serverFiles.length === 0) {
-        fileBrowserStore.fetchFiles(fileBrowserStore.selectedBasePath);
-    }
-};
-
-const removeFileFromNewDatasetSelection = (fileToRemove) => { 
-  if (fileToRemove.source === '服务器') {
-    newDatasetSelectedServerFiles.value = newDatasetSelectedServerFiles.value.filter(f => f.uniqueId !== fileToRemove.uniqueId);
-    const tableInstance = serverFileSelectionTableRef.value;
-    if (tableInstance) {
-        const originalFile = fileBrowserStore.serverFiles.find(sf => {
-            const pathToCheck = fileBrowserStore.currentPath === '.' ? sf.name : `${fileBrowserStore.currentPath}/${sf.name}`;
-            return `server-${pathToCheck}` === fileToRemove.uniqueId;
-        });
-        if (originalFile) tableInstance.toggleRowSelection(originalFile, false);
-    }
-  } else if (fileToRemove.source === '本地' || fileToRemove.source === '本地 (文件夹)') {
-    newDatasetSelectedLocalFiles.value = newDatasetSelectedLocalFiles.value.filter(f => f.uniqueId !== fileToRemove.uniqueId);
-    localFileDisplayList.value = localFileDisplayList.value.filter(f => f.uid !== fileToRemove.uid); 
-  } else if (fileToRemove.source === 'URL') {
-    newDatasetSelectedUrlFiles.value = newDatasetSelectedUrlFiles.value.filter(f => f.uniqueId !== fileToRemove.uniqueId);
-  }
-};
-
-const handleOpenCreateDatasetDialog = async () => {
-  closeContextMenu();
-  
-  let filesForDialog = [];
-  filesForDialog.push(...newDatasetSelectedLocalFiles.value.map(f => ({fileId: f.fileId, fileAbs: f.fileAbs, name: f.name})));
-  filesForDialog.push(...newDatasetSelectedUrlFiles.value.map(f => ({fileId: f.fileId, fileAbs: f.fileAbs, name: f.name})));
-  
-  if (newDatasetSelectedServerFiles.value.length > 0) {
-    isProcessingNewDatasetFiles.value = true; 
-    try {
-      for (const serverFile of newDatasetSelectedServerFiles.value) {
-        const result = await apiService.registerServerFile({ filePath: serverFile.path, fileName: serverFile.name });
-        filesForDialog.push({ fileId: result.fileId, fileAbs: result.fileAbs, name: serverFile.name });
-      }
-    } catch (error) {
-      console.error("Error processing server files for new dataset:", error);
-      ElMessage.error(`处理服务器文件时出错: ${error.message || '未知错误'}`);
-      isProcessingNewDatasetFiles.value = false;
-      return; 
-    } finally {
-      isProcessingNewDatasetFiles.value = false;
-    }
-  }
-    
-  processedFilesForDialog.value = filesForDialog;
-  createDatasetDialogVisible.value = true;
-};
-
-const handleDatasetCreatedWithFiles = () => { 
-    newDatasetSelectedServerFiles.value = [];
-    newDatasetSelectedLocalFiles.value = []; 
-    newDatasetSelectedUrlFiles.value = [];
-    localFileDisplayList.value = []; 
-    if(serverFileSelectionTableRef.value) serverFileSelectionTableRef.value.clearSelection();
-    processedFilesForDialog.value = []; 
-    if(urlFetchFormRef.value) urlFetchFormRef.value.resetFields();
 };
 
 // Lifecycle hooks for context menu
@@ -820,14 +589,27 @@ onMounted(async () => {
     document.addEventListener('click', closeContextMenu);
     await datasetStore.fetchDatasets(); 
     await datasetStore.fetchDatasetConstraints(); 
-    if (activeFileSourceTab.value === 'server') {
-        await fileBrowserStore.fetchFiles(fileBrowserStore.currentPath); 
-    }
+    // Removed fileBrowserStore.fetchFiles call as it was tied to the "File Sources" tab.
+    // If server file browsing is needed for other features like "Add Server Items" dialog,
+    // it should be triggered by that specific component/dialog.
 });
 
 onBeforeUnmount(() => {
   document.removeEventListener('click', closeContextMenu);
 });
+
+// 添加缺失的响应式变量
+const createDatasetDialogVisible = ref(false);
+const processedFilesForDialog = ref([]);
+
+const handleDatasetCreatedWithFiles = async (datasetData) => {
+  try {
+    await datasetStore.createDataset(datasetData);
+    ElMessage.success(t('dataset.createSuccess'));
+  } catch (error) {
+    ElMessage.error(t('dataset.createFailed') + ': ' + error.message);
+  }
+};
 
 </script>
 
@@ -863,67 +645,8 @@ onBeforeUnmount(() => {
   margin-right: 4px;
 }
 
-.local-file-source-tab {
-  padding: 10px;
-  background-color: var(--el-bg-color-overlay);
-}
-
-.local-file-uploader :deep(.el-upload-dragger) {
-  padding: 20px 10px;
-  background-color: var(--el-bg-color);
-  border: 1px dashed var(--el-border-color-light);
-}
-
-.local-file-uploader :deep(.el-icon--upload) {
-  font-size: 40px;
-  margin-bottom: 10px;
-  color: var(--el-text-color-regular);
-}
-
-.local-file-uploader :deep(.el-upload__text) {
-  font-size: 13px;
-  color: var(--el-text-color-regular);
-}
-
-.url-fetch-source-tab {
-  padding: 15px;
-  background-color: var(--el-bg-color-overlay);
-}
-
-.selected-files-panel-for-new-dataset {
-  margin-top: 15px;
-  padding: 10px;
-  background-color: var(--el-bg-color-overlay);
-  border-radius: 4px;
-}
-
-.selected-files-panel-for-new-dataset h4 {
-  margin-top: 0;
-  margin-bottom: 8px;
-  font-size: 13px;
-  color: var(--el-text-color-regular);
-}
-
-.selected-files-panel-for-new-dataset :deep(.el-table th) {
-  background-color: var(--el-bg-color-overlay) !important;
-  color: var(--el-text-color-regular) !important;
-  font-weight: normal;
-}
-
-.selected-files-panel-for-new-dataset :deep(.el-table td, .el-table th) {
-  padding: 3px 0;
-  font-size: 12px;
-  background-color: var(--el-bg-color);
-  color: var(--el-text-color-regular);
-}
-
-.selected-files-panel-for-new-dataset :deep(.el-button--small) {
-  padding: 2px 5px;
-}
-
-.create-dataset-action-panel {
-  padding: 0px 10px 10px 10px;
-}
+/* Removed styles for .local-file-source-tab, .local-file-uploader, .url-fetch-source-tab, 
+   .selected-files-panel-for-new-dataset, .create-dataset-action-panel */
 
 .explorer-panel :deep(.el-collapse-item__header) {
   background-color: var(--el-bg-color-overlay);
@@ -946,84 +669,7 @@ onBeforeUnmount(() => {
   color: var(--el-text-color-regular);
 }
 
-.explorer-panel :deep(.el-tabs__header) {
-  margin-bottom: 0px;
-}
-
-.explorer-panel :deep(.el-tabs__nav-wrap) {
-  padding: 0 10px;
-}
-
-.explorer-panel :deep(.el-tabs__nav-wrap::after) {
-  background-color: var(--el-border-color-light);
-  height: 1px;
-}
-
-.explorer-panel :deep(.el-tabs__item) {
-  color: var(--el-text-color-regular);
-  font-size: 13px;
-  padding: 0 10px;
-  height: 35px;
-  line-height: 35px;
-}
-
-.explorer-panel :deep(.el-tabs__item.is-active) {
-  color: var(--el-text-color-primary);
-}
-
-.server-file-browser {
-  font-size: 13px;
-  padding: 8px 10px;
-  background-color: var(--el-bg-color-overlay);
-}
-
-.path-selector {
-  margin-bottom: 8px;
-}
-
-.path-selector :deep(.el-select) {
-  width: 100%;
-}
-
-.path-navigation {
-  margin-bottom: 8px;
-  padding: 6px;
-  background: var(--el-bg-color-overlay);
-  border-radius: 3px;
-  font-size: 12px;
-}
-
-.path-navigation :deep(.el-breadcrumb__item .el-breadcrumb__inner) {
-  color: var(--el-text-color-regular) !important;
-  cursor: pointer;
-}
-
-.path-navigation :deep(.el-breadcrumb__item .el-breadcrumb__inner:hover) {
-  color: var(--el-color-primary) !important;
-}
-
-.path-navigation :deep(.el-breadcrumb__separator) {
-  color: var(--el-text-color-regular) !important;
-}
-
-.file-name {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  cursor: pointer;
-  font-size: 13px;
-  color: var(--el-text-color-regular);
-}
-
-.file-name span {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.file-name:hover {
-  color: var(--el-color-primary);
-}
+/* Removed styles for .el-tabs, .server-file-browser, .path-selector, .path-navigation, .file-name */
 
 .dataset-loading-indicator, .dataset-error-message {
   padding: 10px;
@@ -1146,49 +792,11 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 
-.explorer-panel :deep(.el-table td), .explorer-panel :deep(.el-table th) {
-  padding: 4px 0;
-  background-color: var(--el-bg-color);
-  color: var(--el-text-color-regular);
-}
-
-.explorer-panel :deep(.file-table-row) {
-  background-color: var(--el-bg-color) !important;
-  color: var(--el-text-color-regular);
-}
-
-.explorer-panel :deep(.file-table-row:hover > td) {
-  background-color: var(--el-fill-color-light) !important;
-}
-
-.explorer-panel :deep(.el-table__empty-text) {
-  color: var(--el-text-color-regular);
-}
-
-.explorer-panel :deep(.el-skeleton__item) {
-  background-color: var(--el-fill-color-light);
-}
-
-.empty-state, .loading-state {
-  margin-top: 10px;
-  padding: 10px;
-  color: var(--el-text-color-regular);
-}
-
-.explorer-panel :deep(.el-empty__description) {
-  color: var(--el-text-color-regular);
-  font-size: 13px;
-}
+/* Removed styles for .el-table, .file-table-row, .el-table__empty-text, .el-skeleton__item, 
+   .empty-state, .loading-state, .el-empty__description, .placeholder-tab-content */
 
 .explorer-panel .el-icon {
   color: var(--el-text-color-regular);
-}
-
-.placeholder-tab-content {
-  padding: 20px;
-  text-align: center;
-  color: var(--el-text-color-regular);
-  font-size: 13px;
 }
 
 .custom-context-menu {

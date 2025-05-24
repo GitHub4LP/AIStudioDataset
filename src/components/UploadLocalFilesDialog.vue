@@ -104,9 +104,10 @@ const props = defineProps({
   datasetId: { type: String, required: true },
   datasetName: { type: String, default: '' },
   basePathInDataset: { type: String, default: '' },
+  initialFiles: { type: Array, default: () => [] },
 });
 
-const emit = defineEmits(['update:visible', 'files-added']);
+const emit = defineEmits(['update:visible', 'files-added', 'initial-files-processed']);
 
 const datasetStore = useDatasetStore();
 const uploadStore = useUploadStore();
@@ -125,6 +126,20 @@ const currentUploadingFile = ref('');
 watch(() => props.visible, (newVal) => {
   if (newVal) {
     resetDialog();
+    if (props.initialFiles && props.initialFiles.length > 0) {
+      for (const file of props.initialFiles) {
+        addFileToList(file, file.webkitRelativePath || '');
+        // Create a corresponding entry for displayFileList for UI consistency
+        displayFileList.value.push({
+          name: file.name,
+          size: file.size,
+          uid: file.uid || `${Date.now()}_${Math.random()}_initialfile`, // Ensure uid for display
+          status: 'ready', // Mimic el-upload's file status
+          raw: file, // Keep a reference to the raw file if needed by el-upload internals or other logic
+        });
+      }
+      emit('initial-files-processed');
+    }
   }
 });
 
@@ -216,115 +231,173 @@ const startUploadProcess = async () => {
 
   // Add a main task for this batch
   const batchTaskId = uuidv4();
-  const isFolderUpload = selectedFiles.value.some(f => f.relativePath) || selectedFiles.value.length > 1;
-  const batchTaskName = isFolderUpload ? 
+  const uploadType = selectedFiles.value.length > 1 || (selectedFiles.value.length === 1 && selectedFiles.value[0].relativePath) ? 'local-folder' : 'local-file';
+  
+  const batchTaskName = uploadType === 'local-folder' ? 
     (selectedFiles.value[0]?.relativePath.split('/')[0] || t('upload.multiFileUpload', { name: props.datasetName })) : 
     (selectedFiles.value[0]?.name || t('upload.fileUpload', { name: props.datasetName }));
 
   uploadStore.addTask({
     id: batchTaskId,
     name: batchTaskName,
-    type: isFolderUpload ? 'folder' : 'file',
-    status: 'uploading',
+    type: uploadType === 'local-folder' ? 'folder' : 'file',
+    uploadType: uploadType,
+    targetDatasetId: props.datasetId,
+    targetDatasetName: props.datasetName,
+    status: 'uploading', // Start as uploading, sub-tasks will drive progress
     progress: 0,
     totalSize: selectedFiles.value.reduce((acc, f) => acc + (f.size || 0), 0),
-    itemCount: totalFilesToUploadCount.value,
+    itemCount: totalFilesToUploadCount.value, // For folder, this is count of files in folder
   });
 
+  const uploadedFileResultsForDatasetUpdate = []; // For datasetStore.addFilesToDataset
+  let overallBatchSuccess = true; // Tracks if all files in the batch uploaded successfully
+
   for (const fileObj of selectedFiles.value) {
-    currentUploadingFile.value = fileObj.name;
-    uploadStore.updateTaskStatus(batchTaskId, 'uploading', uploadProgress.value);
+    let subTaskId = null;
+    if (uploadType === 'local-folder') {
+      subTaskId = uploadStore.addSubTask(batchTaskId, { 
+        name: fileObj.name, 
+        type: 'file', 
+        status: 'uploading', 
+        progress: 0, 
+        totalSize: fileObj.size,
+        uploadType: 'local-file' // Individual files within a folder are 'local-file'
+      });
+    }
+    
+    // Update UI for current file being processed (if needed, or handled by subtask display)
+    // currentUploadingFile.value = fileObj.name; // This might be less relevant if subtasks show names
 
     try {
       const formData = new FormData();
       formData.append('file', fileObj.raw);
+      formData.append('uploadId', subTaskId || batchTaskId);
       
+      // Simulate some progress for the sub-task if it exists, or main task for single file
+      const targetTaskIdForProgress = subTaskId || batchTaskId;
+      uploadStore.updateTaskStatus(targetTaskIdForProgress, 'uploading', 10); // Initial progress bump
+
       const response = await apiService.uploadLocalFile(formData); 
+
       if (response.success && response.fileId) {
         let finalFileAbs = response.fileAbs; 
         if (props.basePathInDataset) {
           finalFileAbs = `${props.basePathInDataset.replace(/^\/+|\/+$/g, '')}/${finalFileAbs}`;
         }
+        // Adjust finalFileAbs based on relativePath if it's a folder upload
         if (fileObj.relativePath) {
             const dirPath = fileObj.relativePath.substring(0, fileObj.relativePath.lastIndexOf('/'));
             if(dirPath) {
                  finalFileAbs = props.basePathInDataset 
                                 ? `${props.basePathInDataset.replace(/^\/+|\/+$/g, '')}/${dirPath}/${fileObj.name}`
                                 : `${dirPath}/${fileObj.name}`;
-            } else { 
+            } else { // File at the root of the selected folder (or a single file with relativePath set)
                  finalFileAbs = props.basePathInDataset
                                 ? `${props.basePathInDataset.replace(/^\/+|\/+$/g, '')}/${fileObj.name}`
                                 : fileObj.name;
             }
         }
         finalFileAbs = finalFileAbs.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
-        uploadedFileResults.push({ fileId: response.fileId, fileAbs: finalFileAbs });
+        
+        uploadedFileResultsForDatasetUpdate.push({ fileId: response.fileId, fileAbs: finalFileAbs });
+
+        if (uploadType === 'local-folder' && subTaskId) {
+          uploadStore.updateSubTaskStatus(batchTaskId, subTaskId, 'completed', 100, null, { fileId: response.fileId, fileAbs: finalFileAbs });
+        } else { // Single file upload, update main task
+          uploadStore.updateTaskStatus(batchTaskId, 'completed', 100, null, { fileId: response.fileId, fileAbs: finalFileAbs });
+        }
         anyFileProcessed = true;
       } else {
-        ElMessage.error(`文件 ${fileObj.name} 上传失败: ${response.error || '未知错误'}`);
-        overallSuccess = false;
+        overallBatchSuccess = false;
+        const errorMsg = response.error || t('error.operationFailed');
+        if (uploadType === 'local-folder' && subTaskId) {
+          uploadStore.updateSubTaskStatus(batchTaskId, subTaskId, 'failed', filesProcessedCount.value / totalFilesToUploadCount.value * 100, errorMsg);
+        } else {
+          uploadStore.updateTaskStatus(batchTaskId, 'failed', filesProcessedCount.value / totalFilesToUploadCount.value * 100, errorMsg);
+        }
+        ElMessage.error(t('file.uploadFailed', { name: fileObj.name, error: errorMsg }));
       }
     } catch (error) {
-      ElMessage.error(`文件 ${fileObj.name} 上传出错: ${error.message || '网络错误'}`);
-      overallSuccess = false;
+      overallBatchSuccess = false;
+      const errorMsg = error.message || t('error.networkError');
+      if (uploadType === 'local-folder' && subTaskId) {
+        uploadStore.updateSubTaskStatus(batchTaskId, subTaskId, 'failed', filesProcessedCount.value / totalFilesToUploadCount.value * 100, errorMsg);
+      } else {
+        uploadStore.updateTaskStatus(batchTaskId, 'failed', filesProcessedCount.value / totalFilesToUploadCount.value * 100, errorMsg);
+      }
+      ElMessage.error(t('file.uploadFailed', { name: fileObj.name, error: errorMsg }));
     }
     filesProcessedCount.value++;
-    uploadProgress.value = Math.round((filesProcessedCount.value / totalFilesToUploadCount.value) * 100);
-    uploadStore.updateTaskStatus(batchTaskId, 'uploading', uploadProgress.value);
+    // Main batch task progress is now handled by sub-task updates in uploadStore
+    // For single file, it's updated directly.
+    // uploadProgress.value = Math.round((filesProcessedCount.value / totalFilesToUploadCount.value) * 100);
   }
-  currentUploadingFile.value = '';
+  // currentUploadingFile.value = ''; // Not needed if subtasks manage this
 
-  if (uploadedFileResults.length > 0) {
+  // After loop, update dataset metadata if any files were successfully processed
+  if (uploadedFileResultsForDatasetUpdate.length > 0) {
     try {
       const dataset = datasetStore.getDatasetById(props.datasetId);
       if (!dataset) {
-        throw new Error('目标数据集信息未找到。');
+        throw new Error(t('error.unknownDatasetId'));
       }
-
-      // 确保数据集信息完整
-      const existingDatasetData = {
-        datasetName: dataset.label || dataset.name || props.datasetName,
-        datasetAbs: dataset.description || dataset.abs || '数据集描述',
-        tags: dataset.tags || [],
-        ispublic: dataset.ispublic !== undefined ? dataset.ispublic : 0,
-        fileIds: dataset.fileIds || [],
-        fileAbsList: dataset.fileAbsList || [],
-      };
-
-      // 添加文件到数据集
       await datasetStore.addFilesToDataset({
         datasetId: props.datasetId,
-        newFilesData: uploadedFileResults,
-        existingDatasetData: existingDatasetData,
+        newFilesData: uploadedFileResultsForDatasetUpdate,
+        existingDatasetData: { /* Minimal existing data, as datasetStore should handle merge */
+          datasetName: dataset.label || dataset.name || props.datasetName,
+          fileIds: dataset.fileIds || [], // Pass existing fileIds for correct merging
+          fileAbsList: dataset.fileAbsList || [], // Pass existing fileAbsList
+        },
       });
-
-      // 触发文件添加事件
-      emit('files-added');
-      
-      if (overallSuccess) {
-        uploadStore.updateTaskStatus(batchTaskId, 'completed', 100);
-        ElMessage.success(`批处理任务完成: ${uploadedFileResults.length} 个文件成功添加到 ${props.datasetName}。`);
-      } else {
-        const errorMsg = `批处理任务部分或完全失败。成功: ${uploadedFileResults.length}/${totalFilesToUploadCount.value}`;
-        uploadStore.updateTaskStatus(batchTaskId, 'failed', uploadProgress.value, errorMsg);
-        ElMessage.warning(errorMsg);
-      }
+      emit('files-added'); 
     } catch (error) {
-      console.error('添加到数据集失败:', error);
-      ElMessage.error(`添加到数据集失败: ${error.message || '未知错误'}`);
-      overallSuccess = false;
-      uploadStore.updateTaskStatus(batchTaskId, 'failed', uploadProgress.value, error.message);
+      console.error('Error adding files to dataset metadata:', error);
+      ElMessage.error(t('dataset.addFilesFailed', { error: error.message || t('error.unknown') }));
+      // This doesn't mean the file uploads failed, just the metadata update.
+      // The batch task in uploadStore might still be 'completed' if all files uploaded.
+      // We might want to add an error to the batch task here if metadata update fails.
+      uploadStore.updateTaskStatus(batchTaskId, 'failed', uploadStore.tasks.find(t=>t.id === batchTaskId)?.progress || 100, t('dataset.addFilesFailed', { error: error.message }));
+      overallBatchSuccess = false; // Mark batch as failed if metadata update fails
     }
   }
   
-  if (!anyFileProcessed && selectedFiles.value.length > 0) {
-    overallSuccess = false;
+  // Final status update for the main batch task in uploadStore
+  // This is mostly handled by sub-task completion logic in uploadStore itself.
+  // However, if no files were processed at all, or if metadata update failed, ensure correct state.
+  const finalBatchTask = uploadStore.tasks.find(t => t.id === batchTaskId);
+  if (finalBatchTask && finalBatchTask.status !== 'failed' && finalBatchTask.status !== 'completed') {
+    // If not already set to failed by sub-task logic or metadata error
+    if (overallBatchSuccess && anyFileProcessed) {
+        // This might be redundant if subtask logic correctly sets parent to completed
+        uploadStore.updateTaskStatus(batchTaskId, 'completed', 100);
+    } else if (!anyFileProcessed && selectedFiles.value.length > 0) {
+        uploadStore.updateTaskStatus(batchTaskId, 'failed', 0, t('upload.noFilesProcessed')); // New i18n key
+    } else if (!overallBatchSuccess) {
+        // Already marked as failed by sub-task or metadata error, or ensure it is
+        if(finalBatchTask.error == null) // if not already set by subtask logic
+          uploadStore.updateTaskStatus(batchTaskId, 'failed', finalBatchTask.progress, finalBatchTask.error || t('upload.batchFailed')); // New i18n key
+    }
   }
 
-  if (selectedFiles.value.length === 0 || (!anyFileProcessed && !overallSuccess)) {
+
+  if (selectedFiles.value.length === 0 || (!anyFileProcessed && !overallBatchSuccess)) {
+    // If no files were selected, or if files were selected but none processed AND the batch wasn't successful
+    // This condition might need refinement based on when the dialog should close.
+    // Generally, we want it to stay open if there was an attempt but it failed, to show errors.
+    // It should close if the user cancels, or if everything is successful.
+    if (selectedFiles.value.length === 0) emit('update:visible', false);
+  }
+  
+  // Only set isLoading to false after all processing, including metadata update
+  isLoading.value = false;
+  
+  // If all files were processed successfully and metadata updated, then close.
+  // Otherwise, keep it open to show errors via the upload overlay.
+  if (overallBatchSuccess && anyFileProcessed) {
     emit('update:visible', false);
   }
-  isLoading.value = false;
 };
 
 </script>

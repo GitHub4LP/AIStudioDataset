@@ -103,7 +103,16 @@ export default {
     nodeId: '节点ID',
     emptyFolder: '此文件夹为空',
     fullPath: '完整路径',
-    unknownSize: '未知大小'
+    unknownSize: '未知大小',
+    dropInstruction: "将文件拖放到此处或树中的数据集/文件夹。",
+    dropTargetInvalid: "无效的放置目标。请拖放到数据集或文件夹中。",
+    noValidFilesDropped: "拖放的项目中未找到有效文件。",
+    folderDropInfo: "对于文件夹，将处理其直接包含的文件。对于嵌套结构，请使用上传对话框中的“选择文件夹”按钮。",
+    noFilesDropped: "未拖放任何文件。",
+    dropError: "处理拖放的文件时出错。",
+    addMultipleItems: "添加 {count} 个项目",
+    registrationFailed: "{name} 注册失败: {error}",
+    noActualFilesRegistered: "操作完成，但没有新文件被注册（例如，空文件夹或已存在的项目）。"
   },
   dataset: {
     name: '数据集',
@@ -212,6 +221,11 @@ export default {
     targetPath: '目标路径 (数据集内)',
     selectFilesOrFolder: '选择文件或文件夹',
     dragOrClick: '拖拽文件到此处或 点击选择文件',
+    showOverlayTip: '显示上传进度',
+    hideOverlayTip: '隐藏上传进度',
+    closeOverlayTip: '关闭上传进度悬浮窗',
+    minimize: '最小化',
+    maximize: '最大化',
     selectFolder: '选择文件夹',
     filesToUpload: '待上传文件 ({count})',
     relativePath: '相对路径 (文件夹内)',
@@ -219,7 +233,10 @@ export default {
     startUpload: '开始上传',
     selectFilesFirst: '请选择要上传的文件',
     multiFileUpload: '多文件上传到 {name}',
-    fileUpload: '文件上传到 {name}'
+    fileUpload: '文件上传到 {name}',
+    target: '目标',
+    noFilesProcessed: '没有文件被成功处理。',
+    batchFailed: '批量上传失败或部分失败。'
   },
   theme: {
     switchTheme: '切换主题',

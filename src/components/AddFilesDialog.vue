@@ -299,87 +299,160 @@ const handleAddSelectedItems = async () => {
   let overallSuccess = true;
 
   const batchTaskId = uuidv4();
-  const taskName = t('file.addingToDataset', { name: props.datasetName || targetDatasetDetails.value.label });
-  const taskType = selectedServerItems.value.length > 1 || selectedServerItems.value.some(item => item.type === '文件夹') ? 'folder' : 'file';
-  
+  const isSingleItem = selectedServerItems.value.length === 1;
+  const firstItem = selectedServerItems.value[0];
+  const isFolderOperation = !isSingleItem || firstItem.type === '文件夹';
+
+  const uploadType = isFolderOperation ? 'server-folder' : 'server-file';
+  const batchTaskName = isSingleItem ? firstItem.name : t('file.addMultipleItems', { count: selectedServerItems.value.length }); // New i18n key
+
   uploadStore.addTask({
     id: batchTaskId,
-    name: taskName,
-    type: taskType,
-    status: 'processing',
+    name: batchTaskName,
+    type: isFolderOperation ? 'folder' : 'file',
+    uploadType: uploadType,
+    targetDatasetId: props.datasetId,
+    targetDatasetName: props.datasetName || targetDatasetDetails.value.label,
+    status: 'processing', // Start as processing
     progress: 0,
-    itemCount: totalItemsToProcess.value,
+    itemCount: totalItemsToProcess.value, // This might be total top-level items, sub-task count will be dynamic
   });
+
+  const allRegisteredFilesForDatasetUpdate = []; // Files to update dataset metadata
+  let overallBatchSuccess = true;
 
   try {
     for (const item of selectedServerItems.value) {
-      const payload = { 
-        filePath: item.path, 
-        fileName: item.name, 
-        folderPath: props.basePathInDataset,
+      let currentSubTaskId = null;
+      if (uploadType === 'server-folder' && item.type === '文件') { // Individual file within a multi-selection or folder
+         currentSubTaskId = uploadStore.addSubTask(batchTaskId, {
+            name: item.name,
+            type: 'file',
+            status: 'processing',
+            progress: 0,
+            uploadType: 'server-file', // Each item is a server-file registration
+         });
+      } else if (uploadType === 'server-folder' && item.type === '文件夹') {
+         // For a selected folder, we create a sub-task representing the folder itself.
+         // The actual files inside will be handled by the backend `registerServerFile` if it expands folders.
+         // If `registerServerFile` only handles one file at a time, this part needs more complex client-side folder traversal.
+         // Assuming `registerServerFile` can take a folder path and register its contents or the folder itself.
+         currentSubTaskId = uploadStore.addSubTask(batchTaskId, {
+            name: item.name,
+            type: 'folder', // This sub-task represents a folder being registered
+            status: 'processing',
+            progress: 0,
+            uploadType: 'server-folder',
+         });
+      }
+
+      const payload = {
+        filePath: item.path,
+        fileName: item.name,
+        folderPath: props.basePathInDataset, // This is the target base path in dataset
+        uploadId: currentSubTaskId || batchTaskId, // 添加 uploadId
       };
-      
-      uploadStore.updateTaskStatus(batchTaskId, 'processing', Math.round((itemsProcessedCount.value / totalItemsToProcess.value) * 50));
 
-      const resultsFromServer = await apiRegisterServerFile(payload); 
+      // If it's a single 'server-file' upload, batchTaskId is the main task ID.
 
-      if (Array.isArray(resultsFromServer)) { 
-        resultsFromServer.forEach(res => {
-          if (res.success && res.fileId) {
-            allResults.push({ fileId: res.fileId, fileAbs: res.fileAbs, name: res.fileName });
+      try {
+        const registrationResults = await apiRegisterServerFile(payload); // This API call might return a single object or an array
+
+        // Normalize results to always be an array
+        const resultsArray = Array.isArray(registrationResults) ? registrationResults : [registrationResults];
+
+        for (const result of resultsArray) {
+          if (result.success && result.fileId) {
+            allRegisteredFilesForDatasetUpdate.push({ fileId: result.fileId, fileAbs: result.fileAbs, name: result.fileName });
+            if (currentSubTaskId) { // If it's a sub-task (part of a folder or multi-selection)
+              uploadStore.updateSubTaskStatus(batchTaskId, currentSubTaskId, 'completed', 100, null, { fileId: result.fileId, fileAbs: result.fileAbs });
+            } else if (uploadType === 'server-file') { // Single server-file upload
+              uploadStore.updateTaskStatus(batchTaskId, 'completed', 100, null, { fileId: result.fileId, fileAbs: result.fileAbs });
+            }
           } else {
-            overallSuccess = false;
+            overallBatchSuccess = false;
+            const errorMsg = result.error || t('error.operationFailed');
+            if (currentSubTaskId) {
+              uploadStore.updateSubTaskStatus(batchTaskId, currentSubTaskId, 'failed', 0, errorMsg);
+            } else if (uploadType === 'server-file') {
+              uploadStore.updateTaskStatus(batchTaskId, 'failed', 0, errorMsg);
+            }
+            ElMessage.error(t('file.registrationFailed', { name: item.name, error: errorMsg })); // New i18n key
           }
-        });
-      } else if (resultsFromServer.success && resultsFromServer.fileId) { 
-        allResults.push({ fileId: resultsFromServer.fileId, fileAbs: resultsFromServer.fileAbs, name: resultsFromServer.fileName });
-      } else {
-        overallSuccess = false;
+        }
+      } catch (error) { // Catch error for individual item registration
+        overallBatchSuccess = false;
+        const errorMsg = error.message || t('error.operationFailed');
+        if (currentSubTaskId) {
+          uploadStore.updateSubTaskStatus(batchTaskId, currentSubTaskId, 'failed', 0, errorMsg);
+        } else if (uploadType === 'server-file') {
+          uploadStore.updateTaskStatus(batchTaskId, 'failed', 0, errorMsg);
+        }
+        ElMessage.error(t('file.registrationFailed', { name: item.name, error: errorMsg }));
       }
       itemsProcessedCount.value++;
-      uploadStore.updateTaskStatus(batchTaskId, 'processing', Math.round((itemsProcessedCount.value / totalItemsToProcess.value) * 50));
+      // Main task progress update is now handled by sub-task logic in uploadStore for folders
+      if (uploadType === 'server-file') { // For single file, update its own progress if not completed/failed
+         const task = uploadStore.tasks.find(t=>t.id === batchTaskId);
+         if(task && task.status === 'processing') { // only if still processing
+            task.progress = Math.round((itemsProcessedCount.value / totalItemsToProcess.value) * 100);
+         }
+      }
     }
 
-    if (allResults.length > 0) {
-      uploadStore.updateTaskStatus(batchTaskId, 'processing', 75);
-      const existingDatasetData = {
-          datasetName: targetDatasetDetails.value.label,
-          datasetAbs: targetDatasetDetails.value.description,
-          tags: targetDatasetDetails.value.tags,
-          ispublic: targetDatasetDetails.value.ispublic !== undefined ? targetDatasetDetails.value.ispublic : 0,
-          fileIds: targetDatasetDetails.value.fileIds || [],
-          fileAbsList: targetDatasetDetails.value.fileAbsList || [],
-      };
-      
-      await datasetStore.addFilesToDataset({
-          datasetId: props.datasetId,
-          newFilesData: allResults, 
-          existingDatasetData
-      });
-    } else if (selectedServerItems.value.length > 0 && !overallSuccess) {
-        uploadStore.updateTaskStatus(batchTaskId, 'failed', 100, t('file.noItemsProcessed'));
+    // After all items are processed, update dataset metadata
+    if (allRegisteredFilesForDatasetUpdate.length > 0) {
+      try {
+        await datasetStore.addFilesToDataset({
+            datasetId: props.datasetId,
+            newFilesData: allRegisteredFilesForDatasetUpdate,
+            existingDatasetData: { /* Minimal existing data for merge */
+                datasetName: targetDatasetDetails.value.label,
+                fileIds: targetDatasetDetails.value.fileIds || [],
+                fileAbsList: targetDatasetDetails.value.fileAbsList || [],
+            }
+        });
+      } catch (error) {
+        console.error('Error adding files to dataset metadata:', error);
+        ElMessage.error(t('dataset.addFilesFailed', { error: error.message || t('error.unknown') }));
+        // If metadata update fails, the overall batch is considered failed.
+        uploadStore.updateTaskStatus(batchTaskId, 'failed', uploadStore.tasks.find(t=>t.id === batchTaskId)?.progress || 100, t('dataset.addFilesFailed', { error: error.message }));
+        overallBatchSuccess = false;
+      }
     }
 
-    if (overallSuccess && allResults.length === selectedServerItems.value.reduce((acc,item) => acc + (item.type === '文件夹' ? ( (apiRegisterServerFile(payload)).length || 1) : 1) ,0) ) {
-        uploadStore.updateTaskStatus(batchTaskId, 'completed', 100);
+    // Finalize main batch task status
+    const finalBatchTask = uploadStore.tasks.find(t => t.id === batchTaskId);
+    if (finalBatchTask && finalBatchTask.status !== 'failed' && finalBatchTask.status !== 'completed') {
+        if (overallBatchSuccess && allRegisteredFilesForDatasetUpdate.length > 0) {
+            uploadStore.updateTaskStatus(batchTaskId, 'completed', 100);
+        } else if (overallBatchSuccess && allRegisteredFilesForDatasetUpdate.length === 0 && selectedServerItems.value.length > 0) {
+            // All individual operations succeeded but yielded no files (e.g. empty folders registered successfully)
+            uploadStore.updateTaskStatus(batchTaskId, 'completed', 100, t('file.noActualFilesRegistered')); // New i18n key
+        } else { // Some failures occurred
+             uploadStore.updateTaskStatus(batchTaskId, 'failed', finalBatchTask.progress, finalBatchTask.error || t('upload.batchFailed'));
+        }
+    }
+    
+    if (overallBatchSuccess && allRegisteredFilesForDatasetUpdate.length > 0) {
         ElMessage.success(t('file.allItemsAdded', { name: props.datasetName || targetDatasetDetails.value.label }));
-    } else if (allResults.length > 0) {
-        const errorMsg = t('file.partialSuccess', { count: allResults.length });
-        uploadStore.updateTaskStatus(batchTaskId, 'failed', 100, errorMsg);
-        ElMessage.warning(errorMsg);
-    } else {
-        uploadStore.updateTaskStatus(batchTaskId, 'failed', itemsProcessedCount.value > 0 ? 100 : 0, t('file.noItemsProcessed'));
+    } else if (allRegisteredFilesForDatasetUpdate.length > 0 && !overallBatchSuccess) {
+        ElMessage.warning(t('file.partialSuccess', { count: allRegisteredFilesForDatasetUpdate.length }));
+    } else if (!overallBatchSuccess) {
         ElMessage.error(t('file.noItemsProcessed'));
     }
 
-  } catch (error) {
+
+  } catch (error) { // Catch error for the overall loop or setup
     console.error(t('error.operationFailed'), error);
-    uploadStore.updateTaskStatus(batchTaskId, 'failed', uploadStore.tasks.find(t=>t.id===batchTaskId)?.progress || 50, error.message || t('error.unknown'));
+    uploadStore.updateTaskStatus(batchTaskId, 'failed', 0, error.message || t('error.unknown'));
+    ElMessage.error(error.message || t('error.operationFailed'));
+    overallBatchSuccess = false;
   } finally {
     isProcessingItems.value = false;
-     if (overallSuccess && allResults.length > 0) {
-        emit('items-added'); 
-        emit('update:visible', false);
+    if (overallBatchSuccess && allRegisteredFilesForDatasetUpdate.length > 0) {
+        emit('items-added');
+        emit('update:visible', false); // Close dialog only on full success
     }
   }
 };
