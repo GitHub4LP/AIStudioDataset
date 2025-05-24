@@ -10,7 +10,7 @@ const routes = [
 ]
 
 const router = createRouter({
-  history: createWebHistory(), // 使用空字符串，让 Vue Router 自动处理相对路径
+  history: createWebHistory(), // 移除 './'，让 Vite 的 base 配置来处理
   routes
 })
 
