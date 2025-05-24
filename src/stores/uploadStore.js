@@ -114,10 +114,11 @@ export const useUploadStore = defineStore('upload', {
     
     // Helper to update task with SSE data
     _handleSSEMessage(taskId, data) {
+        console.debug(`UploadStore SSE Parsed Data for task ${taskId}:`, JSON.parse(JSON.stringify(data)));
         const task = this.tasks.find(t => t.id === taskId);
         if (!task) return;
 
-        console.log(`SSE Message for ${taskId}:`, data);
+        // console.log(`SSE Message for ${taskId}:`, data); // Original log, can be kept or removed
 
         if (data.status) {
             task.status = data.status;
@@ -136,27 +137,43 @@ export const useUploadStore = defineStore('upload', {
         }
         // For folder uploads, individual file updates might come through SSE
         if (task.type === 'folder' && data.individualFileName) {
+            console.debug(`Parent Task for individual file processing: id=${task.id}, name='${task.name}'`);
+            console.debug(`Individual File Data from SSE: name='${data.individualFileName}', status='${data.status}', progress=${data.progress}, fileId='${data.fileId}'`);
             let subTask = task.subTasks.find(st => st.name === data.individualFileName);
+            console.debug(`Sub-task find result (null if new):`, subTask ? JSON.parse(JSON.stringify(subTask)) : null);
             if (!subTask) { // Create subTask if it doesn't exist based on SSE message
                 subTask = {
                     id: uuidv4(),
-                    name: data.individualFileName,
-                    type: 'file', // Ensure this is set for new sub-tasks from SSE
-                    status: data.status,      // From SSE data specific to this file
-                    progress: data.progress || 0, // From SSE data
-                    error: data.error || null,    // From SSE data
-                    fileId: data.fileId || null,  // From SSE data
-                    fileAbs: data.fileAbs || null, // From SSE data
-                    parentId: task.id,          // Optional, for clarity
-                    // Any other relevant fields for a file task can be added here if needed
+                    name: data.individualFileName, // CRITICAL: Must be from data.individualFileName
+                    type: 'file',
+                    status: data.status,
+                    progress: data.progress || 0,
+                    error: data.error || null,
+                    fileId: data.fileId || null,
+                    fileAbs: data.fileAbs || null,
+                    parentId: task.id,
                 };
                 task.subTasks.push(subTask);
+                console.debug('Sub-task state (after create):', JSON.parse(JSON.stringify(subTask)));
             } else {
+                // Update existing sub-task
                 if (data.status) subTask.status = data.status;
                 if (data.progress !== undefined) subTask.progress = data.progress;
-                if (data.error) subTask.error = data.error;
+                
+                // Error handling: update if present, or clear if starting a new processing phase
+                if (data.error !== undefined) {
+                    subTask.error = data.error;
+                } else if (data.status === 'processing_file' || 
+                           data.status === 'uploading_to_bos_started' || 
+                           data.status === 'uploading_to_bos') {
+                    subTask.error = null; 
+                }
+
                 if (data.fileId) subTask.fileId = data.fileId;
                 if (data.fileAbs) subTask.fileAbs = data.fileAbs;
+                // Reaffirm name, mainly for consistency, though it's the key for find.
+                if (data.individualFileName) subTask.name = data.individualFileName; 
+                console.debug('Sub-task state (after update):', JSON.parse(JSON.stringify(subTask)));
             }
             // Recalculate overall folder progress if needed (simplified here)
              this.updateSubTaskStatus(task.id, subTask.id, subTask.status, subTask.progress, subTask.error, { fileId: subTask.fileId, fileAbs: subTask.fileAbs });
@@ -250,10 +267,14 @@ export const useUploadStore = defineStore('upload', {
     },
 
     updateSubTaskStatus(parentTaskId, subTaskId, status, progress, error = null, fileDetails = {}) {
+      console.debug(`updateSubTaskStatus called: parentId=${parentTaskId}, subId=${subTaskId}, status=${status}, progress=${progress}, error=${error}, fileDetails=${JSON.stringify(fileDetails)}`);
       const parentTask = this.tasks.find(t => t.id === parentTaskId);
       if (parentTask && parentTask.subTasks) {
         const subTask = parentTask.subTasks.find(st => st.id === subTaskId);
         if (subTask) {
+          console.debug('Parent task state (before update in updateSubTaskStatus):', JSON.parse(JSON.stringify(parentTask)));
+          console.debug('Sub-task state (before update in updateSubTaskStatus):', JSON.parse(JSON.stringify(subTask)));
+
           if (status !== undefined) subTask.status = status;
           if (progress !== undefined) subTask.progress = progress;
           if (error !== undefined) subTask.error = error;
@@ -280,7 +301,8 @@ export const useUploadStore = defineStore('upload', {
             parentTask.status = hasFailures ? 'completed_folder_with_errors' : 'completed_folder';
             parentTask.error = hasFailures ? (parentTask.error || i18n.global.t('error.folderUploadPartialFailure')) : null;
           }
-          
+          console.debug('Parent task state (after update in updateSubTaskStatus):', JSON.parse(JSON.stringify(parentTask)));
+          console.debug('Sub-task state (after update in updateSubTaskStatus):', JSON.parse(JSON.stringify(subTask)));
         } else {
           console.warn(`SubTask with ID ${subTaskId} not found in parent ${parentTaskId}.`);
         }
