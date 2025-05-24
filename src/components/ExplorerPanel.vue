@@ -448,6 +448,88 @@ const clearDroppedFiles = () => {
   droppedFilesForDialog.value = [];
 };
 
+// Helper function to recursively read directory entries
+async function readDirectoryEntries(directoryReader, pathPrefix = '') {
+  return new Promise((resolve, reject) => {
+    let accumulatedEntries = []; // Stores raw FileEntry/DirectoryEntry objects
+
+    const processAccumulatedEntries = async () => {
+      let files = [];
+      for (const entry of accumulatedEntries) {
+        if (entry.isFile) {
+          try {
+            const file = await new Promise((fileResolve, fileReject) => {
+              entry.file(f => {
+                Object.defineProperty(f, 'webkitRelativePath', {
+                  value: pathPrefix + f.name,
+                  writable: true,
+                  configurable: true
+                });
+                fileResolve(f);
+              }, fileReject);
+            });
+            files.push(file);
+          } catch (err) {
+            console.error('Error getting file from FileEntry:', err);
+            // Optionally, push an error marker or skip. For now, errors are logged.
+          }
+        } else if (entry.isDirectory) {
+          try {
+            // Recursively process subdirectory
+            const nestedFiles = await processDirectoryEntry(entry, pathPrefix + entry.name + '/');
+            files = files.concat(nestedFiles); // Add files from subdirectory
+          } catch (err) {
+            console.error('Error processing subdirectory:', err);
+            // Optionally, push an error marker or skip.
+          }
+        }
+      }
+      resolve(files);
+    };
+
+    const readBatch = () => {
+      directoryReader.readEntries(
+        (entries) => {
+          if (entries.length > 0) {
+            accumulatedEntries = accumulatedEntries.concat(entries);
+            readBatch(); // Read next batch
+          } else {
+            // All entries read, now process them
+            processAccumulatedEntries().catch(reject); // Process entries and handle potential errors
+          }
+        },
+        (err) => {
+          reject(err); // Error in reading entries
+        }
+      );
+    };
+
+    readBatch();
+  });
+}
+
+// Helper function to process a single directory entry
+async function processDirectoryEntry(directoryEntry, pathPrefix = '') {
+  return new Promise((resolve, reject) => {
+    if (directoryEntry.isDirectory) {
+      const directoryReader = directoryEntry.createReader();
+      readDirectoryEntries(directoryReader, pathPrefix)
+        .then(resolve)
+        .catch(reject);
+    } else {
+      // Handle case where a file entry is passed to processDirectoryEntry (should ideally not happen if called correctly)
+      directoryEntry.file(file => {
+         Object.defineProperty(file, 'webkitRelativePath', {
+            value: pathPrefix + file.name, // pathPrefix might be just the directory name here
+            writable: true,
+            configurable: true
+          });
+        resolve([file]);
+      }, reject);
+    }
+  });
+}
+
 const handleNodeDrop = async (draggingNode, dropNode, dropType, event) => {
   event.preventDefault();
   closeContextMenu();
@@ -476,7 +558,8 @@ const handleNodeDrop = async (draggingNode, dropNode, dropType, event) => {
       const serverItem = JSON.parse(serverItemDataString);
       // serverItem should be like { path: '/path/on/server/file.txt', name: 'file.txt', type: 'file' or 'folder' }
       console.log('Server file drop detected (conceptual):', serverItem);
-      ElMessage.info(`Server Item Drop: ${serverItem.name}. Type: ${serverItem.type}. Path: ${serverItem.path}. (Feature in development)`);
+      const message = `${t('file.drop.serverItemDrop', { name: serverItem.name })}. ${t('file.drop.serverItemType', { type: serverItem.type })}. ${t('file.drop.serverItemPath', { path: serverItem.path })}. ${t('file.drop.featureInDevelopment')}`;
+      ElMessage.info(message);
       
       // Future: Instead of just logging, this would trigger a confirmation and then
       // use apiService.uploadServerFileToDataset(...) or similar,
@@ -484,7 +567,7 @@ const handleNodeDrop = async (draggingNode, dropNode, dropType, event) => {
       // This would likely reuse or adapt parts of AddFilesDialog's logic for server files.
     } catch (e) {
       console.error("Error parsing server file drop data:", e);
-      ElMessage.error("Invalid server file drop data.");
+      ElMessage.error(t('file.drop.invalidServerData'));
     }
     return; // Stop further processing if it's a server file drop
   }
@@ -503,35 +586,22 @@ const handleNodeDrop = async (draggingNode, dropNode, dropType, event) => {
           if (entry.isFile) {
             filePromises.push(new Promise((resolve, reject) => {
               entry.file(file => {
-                if (!file.webkitRelativePath) {
-                   Object.defineProperty(file, 'webkitRelativePath', { value: '', configurable: true, writable: true });
+                // For single files, webkitRelativePath might be just the filename or empty.
+                // We'll set it to entry.name for consistency if it's not already more specific.
+                const currentRelativePath = file.webkitRelativePath;
+                if (!currentRelativePath || currentRelativePath === file.name) {
+                   Object.defineProperty(file, 'webkitRelativePath', { 
+                     value: entry.name, // Use entry.name as the base relative path for standalone files
+                     configurable: true, 
+                     writable: true 
+                    });
                 }
                 resolve(file);
               }, reject);
             }));
           } else if (entry.isDirectory) {
-            const dirReader = entry.createReader();
-            filePromises.push(new Promise((resolveDirectory, rejectDirectory) => {
-              dirReader.readEntries(async (dirEntries) => {
-                const innerFilePromises = [];
-                for (const innerEntry of dirEntries) {
-                  if (innerEntry.isFile) {
-                    innerFilePromises.push(new Promise((resolveFile, rejectFile) => {
-                      innerEntry.file(file => {
-                        Object.defineProperty(file, 'webkitRelativePath', { value: `${entry.name}/${file.name}`, configurable: true, writable: true });
-                        resolveFile(file);
-                      }, rejectFile);
-                    }));
-                  }
-                }
-                try {
-                    const filesFromDir = await Promise.all(innerFilePromises);
-                    resolveDirectory(filesFromDir); 
-                } catch (error) {
-                    rejectDirectory(error);
-                }
-              }, rejectDirectory);
-            }));
+            // Use the new recursive function for directories
+            filePromises.push(processDirectoryEntry(entry, entry.name + '/'));
           }
         }
       }

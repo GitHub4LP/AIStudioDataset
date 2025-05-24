@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia';
 import { v4 as uuidv4 } from 'uuid'; // For generating unique IDs
+import i18n from '@/i18n'; // Import the i18n instance
 
 export const useUploadStore = defineStore('upload', {
   state: () => ({
@@ -37,6 +38,31 @@ export const useUploadStore = defineStore('upload', {
   },
 
   actions: {
+    _finalizeTask(taskId) {
+      const task = this.tasks.find(t => t.id === taskId);
+      if (!task) {
+        console.warn(`_finalizeTask: Task with ID ${taskId} not found.`);
+        return;
+      }
+
+      if (task.uploadType.startsWith('local')) {
+        this.activeLocalUploads = Math.max(0, this.activeLocalUploads - 1);
+        console.debug(`_finalizeTask: Decremented activeLocalUploads for ${taskId}. New count: ${this.activeLocalUploads}`);
+      } else if (task.uploadType.startsWith('server')) {
+        this.activeServerUploads = Math.max(0, this.activeServerUploads - 1);
+        console.debug(`_finalizeTask: Decremented activeServerUploads for ${taskId}. New count: ${this.activeServerUploads}`);
+      }
+      // URL fetches do not have their own counters in this system.
+
+      if (this.sseConnections[taskId]) {
+        this.sseConnections[taskId].close();
+        delete this.sseConnections[taskId];
+        console.log(`_finalizeTask: SSE Connection closed for task: ${taskId}`);
+      }
+
+      this.processUploadQueue();
+    },
+
     // Initializes a new task and adds it to the main tasks list.
     // This task is then pushed to the pendingQueue to await processing.
     addTask(taskDetails) { // taskDetails will now include the actual file object for local uploads
@@ -119,11 +145,7 @@ export const useUploadStore = defineStore('upload', {
 
 
         if (data.status === 'completed' || data.status === 'failed' || data.status === 'completed_folder' || data.status === 'completed_folder_with_errors') {
-            if (this.sseConnections[taskId]) {
-                this.sseConnections[taskId].close();
-                delete this.sseConnections[taskId];
-                console.log(`SSE Connection closed for completed/failed task: ${taskId}`);
-            }
+            this._finalizeTask(taskId);
         }
     },
 
@@ -154,7 +176,7 @@ export const useUploadStore = defineStore('upload', {
             task.subTasks.forEach(st => {
               if (['pending', 'uploading', 'processing'].includes(st.status)) {
                 st.status = 'failed';
-                st.error = st.error || "Parent task failed";
+                st.error = st.error || i18n.global.t('error.parentTaskFailed');
               }
             });
           }
@@ -237,7 +259,7 @@ export const useUploadStore = defineStore('upload', {
           if (completedSubTasks === parentTask.subTasks.length && parentTask.subTasks.length > 0) {
             const hasFailures = parentTask.subTasks.some(st => st.status === 'failed');
             parentTask.status = hasFailures ? 'failed' : 'completed';
-            parentTask.error = hasFailures ? (parentTask.error || 'One or more files failed to upload.') : null;
+            parentTask.error = hasFailures ? (parentTask.error || i18n.global.t('error.folderUploadPartialFailure')) : null;
           }
           
         } else {
@@ -307,7 +329,7 @@ export const useUploadStore = defineStore('upload', {
         // For now, we assume the server will send a final status or the connection will be closed by other means.
         // However, if the error implies a total failure to connect or immediate closure, we might act.
         if (task.status === 'uploading' || task.status === 'queued') { // Only if still in an active phase
-             this._handleSSEMessage(task.id, { status: 'failed', error: 'SSE connection error' });
+             this._handleSSEMessage(task.id, { status: 'failed', error: i18n.global.t('error.sseConnectionError') });
         }
         // eventSource.close(); // Closing here might prevent retries or server's own final messages
         // delete this.sseConnections[task.id];
@@ -316,6 +338,9 @@ export const useUploadStore = defineStore('upload', {
       // Simulate the API call that triggers the backend process
       // This would be an actual fetch/XHR call in a real app.
       try {
+        // Ensure task status is 'uploading' before API call
+        // this.updateTaskStatus(task.id, 'uploading', task.progress); // Already done before calling _performActualUpload or at the start of it.
+
         let apiUrl;
         const requestBody = {
             uploadId: task.uploadId,
@@ -376,18 +401,18 @@ export const useUploadStore = defineStore('upload', {
                 body: JSON.stringify(requestBody),
             });
         } else {
-          throw new Error(`Unsupported upload type for SSE: ${task.uploadType}`);
+          throw new Error(i18n.global.t('error.unknownUploadType', { type: task.uploadType }));
         }
         console.log(`API call made for ${task.name} to ${apiUrl}`);
         // Note: The `finally` block of the main processing loop will handle decrementing concurrency counters.
         // The EventSource connection will remain open until the server closes it or sends a final message.
       } catch (error) {
           console.error(`API call failed for task ${task.id}:`, error);
-          this._handleSSEMessage(task.id, { status: 'failed', error: `API call error: ${error.message}` });
-           if (this.sseConnections[task.id]) {
-                this.sseConnections[task.id].close();
-                delete this.sseConnections[task.id];
-            }
+          // _handleSSEMessage will call _finalizeTask, which handles counters and SSE connection cleanup.
+          this._handleSSEMessage(task.id, { status: 'failed', error: i18n.global.t('error.apiCallError', { message: error.message }) });
+          // No need to manually close SSE here, _finalizeTask will do it.
+          // No need to manually decrement counters here if _finalizeTask is robustly called.
+          // processUploadQueue will be called by _finalizeTask.
       }
     },
 
@@ -434,7 +459,7 @@ export const useUploadStore = defineStore('upload', {
           slotAvailable = true; // URL fetches don't use these counters
         } else {
           console.warn(`Unknown upload type for task ${task.id}: ${task.uploadType}. Cannot process.`);
-          this.updateTaskStatus(task.id, 'failed', 0, `Unknown upload type: ${task.uploadType}`);
+          this.updateTaskStatus(task.id, 'failed', 0, i18n.global.t('error.unknownUploadType', { type: task.uploadType }));
           this.pendingQueue.splice(i, 1);
           i--;
           continue;
@@ -449,18 +474,23 @@ export const useUploadStore = defineStore('upload', {
           // or initial API call failure within _performActualUpload.
           this._performActualUpload(task)
             .then(() => {
-                // This .then() is primarily for the case where _performActualUpload's initial setup might fail synchronously.
-                // Most of the async logic (SSE, actual upload completion) will manage counters in their own flow.
-                // console.log(`_performActualUpload promise resolved for ${task.name}`);
+                // console.log(`_performActualUpload promise chain initiated for ${task.name}`);
             })
             .catch(error => {
-                // This .catch() is for synchronous errors thrown by _performActualUpload setup
-                console.error(`Synchronous error in _performActualUpload setup for ${task.name}:`, error);
-                this.updateTaskStatus(task.id, 'failed', task.progress, error.message || 'Upload setup error');
-                // Ensure counter is decremented if it was incremented before failure
-                if (isLocalTaskType) this.activeLocalUploads = Math.max(0, this.activeLocalUploads -1);
-                if (isServerTaskType) this.activeServerUploads = Math.max(0, this.activeServerUploads -1);
-                this.processUploadQueue(); // Try to process next
+                // This .catch() is for synchronous errors thrown by _performActualUpload setup *before* the try/catch inside _performActualUpload.
+                // For example, if _performActualUpload itself was not an async function and threw directly.
+                // Given _performActualUpload is async and has its own try/catch that calls _handleSSEMessage -> _finalizeTask,
+                // this specific catch block in processUploadQueue might become less critical for counter management,
+                // as _finalizeTask should handle it. However, it's a good safety net.
+                console.error(`Error during initial call to _performActualUpload for ${task.name}:`, error);
+                
+                // Directly ensure task is failed and finalized if _performActualUpload itself errors out early.
+                // This is a fallback. Ideally, errors within _performActualUpload are caught there.
+                this.updateTaskStatus(task.id, 'failed', task.progress, error.message || i18n.global.t('error.operationFailed'));
+                
+                // Call _finalizeTask directly to ensure cleanup and queue processing.
+                // This covers cases where _performActualUpload might not even start its try-catch block.
+                this._finalizeTask(task.id); 
             });
         } else {
             console.debug(`No slot for task ${task.name} (Type: ${task.uploadType}). Local: ${this.activeLocalUploads}/${this.maxConcurrentLocalUploads}, Server: ${this.activeServerUploads}/${this.maxConcurrentServerUploads}`);
