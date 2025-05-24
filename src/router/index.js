@@ -10,7 +10,7 @@ const routes = [
 ]
 
 const router = createRouter({
-  history: createWebHistory('./'), // 使用相对路径作为基础路径
+  history: createWebHistory(), // 使用空字符串，让 Vue Router 自动处理相对路径
   routes
 })
 

@@ -3,7 +3,7 @@ import vue from '@vitejs/plugin-vue'
 import { fileURLToPath, URL } from 'node:url'
 
 export default defineConfig({
-  base: './',
+  base: '',
   plugins: [vue()],
   resolve: {
     alias: {
@@ -16,5 +16,15 @@ export default defineConfig({
       'aistudio.baidu.com',
       '.baidu.com'
     ]
+  },
+  build: {
+    assetsDir: 'assets',
+    rollupOptions: {
+      output: {
+        assetFileNames: 'assets/[name][extname]',
+        chunkFileNames: 'assets/[name].js',
+        entryFileNames: 'assets/[name].js'
+      }
+    }
   }
 }) 
