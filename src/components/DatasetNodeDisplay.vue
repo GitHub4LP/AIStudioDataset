@@ -15,7 +15,7 @@
       </span>
       <span class="node-actions">
         <el-tooltip v-if="node.type === 'file'" :content="t('dataset.node.removeFile')" placement="top">
-          <el-button link type="danger" size="small" @click.stop="confirmRemoveFile" :title="t('dataset.node.removeFile')">
+          <el-button link type="danger" size="small" @click.stop="handleRemoveFileClick" :title="t('dataset.node.removeFile')">
             <el-icon><Delete /></el-icon>
           </el-button>
         </el-tooltip>
@@ -84,19 +84,10 @@ const handleNodeClick = () => {
   }
 };
 
-const confirmRemoveFile = () => {
+const handleRemoveFileClick = () => { // Renamed for clarity
   if (props.node.type !== 'file') return;
-  ElMessageBox.confirm(
-    t('dataset.node.removeFileConfirm'),
-    t('dataset.node.removeFile'),
-    {
-      confirmButtonText: t('common.confirm'),
-      cancelButtonText: t('common.cancel'),
-      type: 'warning'
-    }
-  ).then(() => {
-    emit('remove-file', { fileNode: props.node, dataset: props.currentDatasetDetails });
-  }).catch(() => {});
+  // Directly emit the event; parent will handle confirmation
+  emit('remove-file', { fileNode: props.node, dataset: props.currentDatasetDetails });
 };
 
 // Expose utilities to template (alternative to importing them in <script setup> directly if preferred)

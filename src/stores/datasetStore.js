@@ -12,7 +12,7 @@ import {
 } from '@/services/apiService'; // Assuming @ is configured for src
 import { buildFileTree } from '../utils/fileTreeHelper';
 
-const PAGE_SIZE = 20; // As used in ExplorerPanel
+// const PAGE_SIZE = 60; // Removed, will use dynamic page size from constraints
 const MAX_CONCURRENT_REQUESTS = 3; // As used in ExplorerPanel
 
 export const useDatasetStore = defineStore('dataset', {
@@ -54,37 +54,50 @@ export const useDatasetStore = defineStore('dataset', {
       this.totalPages = 0;
       this.loadedPages = 0;
       this.datasets = [];
-      this.detailedDatasets = {};
+      this.detailedDatasets = {}; // Clearing this here, as per existing code.
 
       try {
-        const firstPageResponse = await fetchPrivateDatasetList(1, PAGE_SIZE);
+        // Step 1: Ensure constraints are loaded
+        if (!this.datasetConstraints) {
+          await this.fetchDatasetConstraints();
+        }
+
+        // Step 2: Use dynamic page size from constraints
+        let dynamicPageSize = 60; // Default fallback
+        if (this.datasetConstraints && typeof this.datasetConstraints.maxTotalDatasets === 'number') {
+          dynamicPageSize = this.datasetConstraints.maxTotalDatasets;
+          // console.log(`[DATASET_STORE] Using dynamic page size from constraints: ${dynamicPageSize}`);
+        } else {
+          // console.warn(`[DATASET_STORE] maxTotalDatasets constraint not found or not a number, using default page size: ${dynamicPageSize}. Constraints:`, this.datasetConstraints);
+        }
+
+        const firstPageResponse = await fetchPrivateDatasetList(1, dynamicPageSize);
         if (!firstPageResponse || !firstPageResponse.result) {
-          throw new Error('Initial dataset fetch: Data format incorrect');
+          // throw new Error('Initial dataset fetch: Data format incorrect'); // Original error
+          // Safety check for data field
+          if (!firstPageResponse?.result?.data || !Array.isArray(firstPageResponse.result.data)) {
+             console.warn('Initial dataset fetch: Data field is missing or not an array. Assuming empty list.');
+             this.datasets = []; // Ensure datasets is an empty array if data is malformed
+          } else {
+             this.datasets = [...firstPageResponse.result.data];
+          }
+        } else {
+           // Handle the case where firstPageResponse.result exists but data might be missing or not an array
+           if (!firstPageResponse.result.data || !Array.isArray(firstPageResponse.result.data)) {
+              console.warn('Initial dataset fetch: Data field is missing or not an array within result. Assuming empty list.');
+              this.datasets = [];
+           } else {
+              this.datasets = [...firstPageResponse.result.data];
+           }
         }
         
-        this.totalPages = firstPageResponse.result.totalPage;
-        let allDatasetMetas = [...firstPageResponse.result.data];
+        // Reset totalPages and loadedPages as they are less relevant now, or set them based on this single call
+        this.totalPages = firstPageResponse?.result?.totalPage || 1; // API might still send totalPage
         this.loadedPages = 1;
 
-        if (this.totalPages > 1) {
-          const remainingPages = Array.from({ length: this.totalPages - 1 }, (_, i) => i + 2);
-          for (let i = 0; i < remainingPages.length; i += MAX_CONCURRENT_REQUESTS) {
-            const batch = remainingPages.slice(i, i + MAX_CONCURRENT_REQUESTS);
-            const results = await Promise.all(batch.map(page => fetchPrivateDatasetList(page, PAGE_SIZE)));
-            results.forEach(pageData => {
-              if (pageData && pageData.result && pageData.result.data) {
-                allDatasetMetas = [...allDatasetMetas, ...pageData.result.data];
-              }
-            });
-            this.loadedPages += batch.length;
-          }
-        }
-        this.datasets = allDatasetMetas;
-
-        // Now fetch details for all datasets concurrently
-        // This might be too much for many datasets, consider fetching details on demand (e.g., when selected)
-        // For now, matching existing behavior from ExplorerPanel
-        const detailPromises = allDatasetMetas.map(ds => 
+        // The 'allDatasetMetas' variable is now just 'this.datasets'
+        // The subsequent logic for fetching details should use 'this.datasets.map(...)'
+        const detailPromises = this.datasets.map(ds => 
             getDatasetDetails(ds.datasetId)
                 .then(detailData => {
                     if (detailData && detailData.result) {
